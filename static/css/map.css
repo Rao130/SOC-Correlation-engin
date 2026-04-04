@@ -1,0 +1,174 @@
+/* Simple Map Styles */
+.simple-map-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+.map-canvas {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.world-bg {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: 
+        radial-gradient(circle at 30% 30%, rgba(0, 212, 255, 0.1) 0%, transparent 40%),
+        radial-gradient(circle at 70% 70%, rgba(255, 56, 56, 0.1) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(255, 193, 7, 0.05) 0%, transparent 60%);
+    transition: transform 0.3s ease;
+}
+
+.markers-layer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+}
+
+/* Threat Markers */
+.threat-marker {
+    position: absolute;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.threat-marker:hover {
+    transform: scale(1.2);
+    z-index: 20;
+}
+
+.marker-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+/* Severity Colors */
+.threat-marker.critical .marker-dot {
+    background: #ff3838;
+    border: 2px solid #ff6b6b;
+    box-shadow: 0 0 15px rgba(255, 56, 56, 0.8);
+}
+
+.threat-marker.high .marker-dot {
+    background: #ff6b6b;
+    border: 2px solid #ff8c8c;
+    box-shadow: 0 0 12px rgba(255, 107, 107, 0.6);
+}
+
+.threat-marker.medium .marker-dot {
+    background: #ffc107;
+    border: 2px solid #ffd54f;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.4);
+}
+
+.threat-marker.low .marker-dot {
+    background: #28a745;
+    border: 2px solid #48c758;
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.4);
+}
+
+/* Map Header */
+.map-header {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    z-index: 100;
+}
+
+.map-header h3 {
+    color: #00d4ff;
+    margin: 0 0 10px 0;
+    font-size: 1.1rem;
+}
+
+.map-stats {
+    display: flex;
+    gap: 15px;
+}
+
+.map-stats span {
+    color: #e0e0e0;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+    border-radius: 12px;
+}
+
+/* Map Controls */
+.map-controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 5px;
+    z-index: 100;
+}
+
+.map-controls button {
+    width: 32px;
+    height: 32px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid #00d4ff;
+    border-radius: 6px;
+    color: #00d4ff;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s ease;
+}
+
+.map-controls button:hover {
+    background: rgba(0, 212, 255, 0.2);
+    transform: scale(1.1);
+}
+
+/* Pulse Animation */
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .map-header {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        padding: 10px;
+    }
+    
+    .map-header h3 {
+        font-size: 1rem;
+    }
+    
+    .map-stats {
+        justify-content: center;
+        gap: 10px;
+    }
+    
+    .map-controls {
+        top: auto;
+        bottom: 10px;
+        right: 10px;
+    }
+    
+    .map-controls button {
+        width: 28px;
+        height: 28px;
+        font-size: 10px;
+    }
+}

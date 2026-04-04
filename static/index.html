@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Correlation Engine - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/map.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1><i class="fas fa-shield-alt"></i> SOC Correlation Engine</h1>
+                <div class="status-indicator">
+                    <span class="status-dot online"></span>
+                    <span class="status-text">System Online</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="system-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Active Alerts</span>
+                        <span class="stat-value" id="active-alerts">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Correlations</span>
+                        <span class="stat-value" id="correlations">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Threat Level</span>
+                        <span class="stat-value threat-level-medium" id="threat-level">Medium</span>
+                    </div>
+                </div>
+                <button class="refresh-btn" onclick="refreshDashboard()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <ul>
+                        <li class="nav-item active">
+                            <a href="#dashboard" onclick="showSection('dashboard')">
+                                <i class="fas fa-tachometer-alt"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#alerts" onclick="showSection('alerts')">
+                                <i class="fas fa-exclamation-triangle"></i> Alerts
+                                <span class="badge" id="alert-badge">0</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#correlation" onclick="showSection('correlation')">
+                                <i class="fas fa-project-diagram"></i> Correlations
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#reputation" onclick="showSection('reputation')">
+                                <i class="fas fa-database"></i> Reputation
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#maps" onclick="showSection('maps')">
+                                <i class="fas fa-map"></i> Maps
+                            </a>
+                        </li>
+                                                <li class="nav-item">
+                            <a href="#analytics" onclick="showSection('analytics')">
+                                <i class="fas fa-chart-line"></i> Analytics
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="#logs" onclick="showSection('logs')">
+                                <i class="fas fa-file-alt"></i> System Logs
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </aside>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Dashboard Section -->
+                <section id="dashboard-section" class="content-section active">
+                    <div class="section-header">
+                        <h2>Security Dashboard</h2>
+                        <div class="time-range-selector">
+                            <select id="time-range" onchange="updateTimeRange()">
+                                <option value="1h">Last Hour</option>
+                                <option value="6h">Last 6 Hours</option>
+                                <option value="24h" selected>Last 24 Hours</option>
+                                <option value="7d">Last 7 Days</option>
+                                <option value="30d">Last 30 Days</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- KPI Cards -->
+                    <div class="kpi-grid">
+                        <div class="kpi-card critical">
+                            <div class="kpi-icon">
+                                <i class="fas fa-exclamation-circle"></i>
+                            </div>
+                            <div class="kpi-content">
+                                <h3>Critical Alerts</h3>
+                                <div class="kpi-value" id="critical-alerts">0</div>
+                                <div class="kpi-trend">
+                                    <i class="fas fa-arrow-up"></i> 12% from yesterday
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card high">
+                            <div class="kpi-icon">
+                                <i class="fas fa-shield-virus"></i>
+                            </div>
+                            <div class="kpi-content">
+                                <h3>Threats Detected</h3>
+                                <div class="kpi-value" id="threats-detected">0</div>
+                                <div class="kpi-trend">
+                                    <i class="fas fa-arrow-down"></i> 5% from yesterday
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card medium">
+                            <div class="kpi-icon">
+                                <i class="fas fa-link"></i>
+                            </div>
+                            <div class="kpi-content">
+                                <h3>Correlations Found</h3>
+                                <div class="kpi-value" id="correlations-found">0</div>
+                                <div class="kpi-trend">
+                                    <i class="fas fa-arrow-up"></i> 8% from yesterday
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="kpi-card low">
+                            <div class="kpi-icon">
+                                <i class="fas fa-user-check"></i>
+                            </div>
+                            <div class="kpi-content">
+                                <h3>False Positives</h3>
+                                <div class="kpi-value" id="false-positives">0</div>
+                                <div class="kpi-trend">
+                                    <i class="fas fa-arrow-down"></i> 15% improvement
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="charts-row">
+                        <div class="chart-container">
+                            <h3>Alert Timeline</h3>
+                            <div class="chart" id="alert-timeline-chart"></div>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Threat Distribution</h3>
+                            <div class="chart" id="threat-distribution-chart"></div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Alerts Table -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Recent Alerts</h3>
+                            <button class="btn btn-primary" onclick="showSection('alerts')">
+                                View All Alerts
+                            </button>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="alerts-table">
+                                <thead>
+                                    <tr>
+                                        <th>Alert ID</th>
+                                        <th>Title</th>
+                                        <th>Severity</th>
+                                        <th>Status</th>
+                                        <th>Time</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recent-alerts-tbody">
+                                    <!-- Alerts will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Alerts Section -->
+                <section id="alerts-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Alert Management</h2>
+                        <div class="section-controls">
+                            <input type="text" placeholder="Search alerts..." class="search-input" id="alert-search">
+                            <select class="filter-select" id="severity-filter">
+                                <option value="">All Severities</option>
+                                <option value="critical">Critical</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                            <select class="filter-select" id="status-filter">
+                                <option value="">All Status</option>
+                                <option value="new">New</option>
+                                <option value="investigating">Investigating</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="false_positive">False Positive</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="createAlert()">
+                                <i class="fas fa-plus"></i> New Alert
+                            </button>
+                            <button class="btn btn-secondary" onclick="refreshAlerts()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Alert Statistics -->
+                    <div class="alert-stats">
+                        <div class="stat-card critical">
+                            <h3>Critical</h3>
+                            <span class="stat-value" id="critical-count">0</span>
+                        </div>
+                        <div class="stat-card high">
+                            <h3>High</h3>
+                            <span class="stat-value" id="high-count">0</span>
+                        </div>
+                        <div class="stat-card medium">
+                            <h3>Medium</h3>
+                            <span class="stat-value" id="medium-count">0</span>
+                        </div>
+                        <div class="stat-card low">
+                            <h3>Low</h3>
+                            <span class="stat-value" id="low-count">0</span>
+                        </div>
+                        <div class="stat-card total">
+                            <h3>Total</h3>
+                            <span class="stat-value" id="total-count">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Alert Table -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Alert List</h3>
+                            <div class="table-actions">
+                                <span class="alert-count" id="alert-count">0 alerts</span>
+                                <button class="btn btn-sm" onclick="toggleAutoRefresh()">
+                                    <i class="fas fa-play" id="auto-refresh-icon"></i> Auto Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="alerts-table">
+                                <thead>
+                                    <tr>
+                                        <th onclick="sortAlerts('timestamp')">Time <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortAlerts('title')">Title <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortAlerts('severity')">Severity <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortAlerts('category')">Category <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortAlerts('status')">Status <i class="fas fa-sort"></i></th>
+                                        <th>Source</th>
+                                        <th>Confidence</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alerts-tbody">
+                                    <!-- Alerts will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <button onclick="previousAlertPage()" id="alert-prev-btn" disabled>Previous</button>
+                            <span id="alert-page-info">Page 1 of 1</span>
+                            <button onclick="nextAlertPage()" id="alert-next-btn" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Correlation Section -->
+                <section id="correlation-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Alert Correlations</h2>
+                        <div class="section-controls">
+                            <input type="text" placeholder="Search correlations..." class="search-input" id="correlation-search">
+                            <select class="filter-select" id="correlation-type-filter">
+                                <option value="">All Types</option>
+                                <option value="entity_based">Entity Based</option>
+                                <option value="temporal">Temporal</option>
+                                <option value="geographic">Geographic</option>
+                                <option value="pattern_based">Pattern Based</option>
+                            </select>
+                            <select class="filter-select" id="correlation-status-filter">
+                                <option value="">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="investigating">Investigating</option>
+                                <option value="resolved">Resolved</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="runCorrelationAnalysis()">
+                                <i class="fas fa-play"></i> Run Analysis
+                            </button>
+                            <button class="btn btn-secondary" onclick="refreshCorrelations()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Correlation Statistics -->
+                    <div class="correlation-stats">
+                        <div class="stat-card active">
+                            <h3>Active</h3>
+                            <span class="stat-value" id="active-correlations-count">0</span>
+                        </div>
+                        <div class="stat-card investigating">
+                            <h3>Investigating</h3>
+                            <span class="stat-value" id="investigating-correlations-count">0</span>
+                        </div>
+                        <div class="stat-card entity-based">
+                            <h3>Entity Based</h3>
+                            <span class="stat-value" id="entity-based-count">0</span>
+                        </div>
+                        <div class="stat-card temporal">
+                            <h3>Temporal</h3>
+                            <span class="stat-value" id="temporal-count">0</span>
+                        </div>
+                        <div class="stat-card total">
+                            <h3>Total</h3>
+                            <span class="stat-value" id="total-correlations-count">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Correlation Table -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Correlation Groups</h3>
+                            <div class="table-actions">
+                                <span class="correlation-count" id="correlation-count">0 correlations</span>
+                                <button class="btn btn-sm" onclick="toggleCorrelationAutoRefresh()">
+                                    <i class="fas fa-play" id="correlation-auto-refresh-icon"></i> Auto Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="correlation-table">
+                                <thead>
+                                    <tr>
+                                        <th onclick="sortCorrelations('name')">Name <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortCorrelations('correlation_type')">Type <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortCorrelations('correlation_score')">Score <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortCorrelations('status')">Status <i class="fas fa-sort"></i></th>
+                                        <th>Alerts</th>
+                                        <th>Entities</th>
+                                        <th>Created</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="correlation-tbody">
+                                    <!-- Correlation data will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <button onclick="previousCorrelationPage()" id="correlation-prev-btn" disabled>Previous</button>
+                            <span id="correlation-page-info">Page 1 of 1</span>
+                            <button onclick="nextCorrelationPage()" id="correlation-next-btn" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Reputation Section -->
+                <section id="reputation-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Reputation Database</h2>
+                        <div class="section-controls">
+                            <input type="text" placeholder="Search entities..." class="search-input" id="reputation-search">
+                            <select class="filter-select" id="risk-filter">
+                                <option value="">All Risk Levels</option>
+                                <option value="malicious">Malicious</option>
+                                <option value="suspicious">Suspicious</option>
+                                <option value="benign">Benign</option>
+                                <option value="unknown">Unknown</option>
+                            </select>
+                            <select class="filter-select" id="entity-type-filter">
+                                <option value="">All Types</option>
+                                <option value="ip">IP Address</option>
+                                <option value="domain">Domain</option>
+                                <option value="hash">Hash</option>
+                                <option value="email">Email</option>
+                                <option value="url">URL</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="checkReputation()">
+                                <i class="fas fa-search"></i> Check Entity
+                            </button>
+                            <button class="btn btn-secondary" onclick="refreshReputation()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Reputation Statistics -->
+                    <div class="reputation-stats">
+                        <div class="stat-card malicious">
+                            <h3>Malicious</h3>
+                            <span class="stat-value" id="malicious-count">0</span>
+                        </div>
+                        <div class="stat-card suspicious">
+                            <h3>Suspicious</h3>
+                            <span class="stat-value" id="suspicious-count">0</span>
+                        </div>
+                        <div class="stat-card benign">
+                            <h3>Benign</h3>
+                            <span class="stat-value" id="benign-count">0</span>
+                        </div>
+                        <div class="stat-card unknown">
+                            <h3>Unknown</h3>
+                            <span class="stat-value" id="unknown-count">0</span>
+                        </div>
+                        <div class="stat-card total">
+                            <h3>Total</h3>
+                            <span class="stat-value" id="total-reputation-count">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Reputation Table -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <h3>Entity Reputation</h3>
+                            <div class="table-actions">
+                                <span class="entity-count" id="entity-count">0 entities</span>
+                                <button class="btn btn-sm" onclick="toggleReputationAutoRefresh()">
+                                    <i class="fas fa-play" id="reputation-auto-refresh-icon"></i> Auto Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="reputation-table">
+                                <thead>
+                                    <tr>
+                                        <th onclick="sortReputation('entity')">Entity <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortReputation('entity_type')">Type <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortReputation('aggregated_score')">Score <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortReputation('risk_level')">Risk Level <i class="fas fa-sort"></i></th>
+                                        <th>Category</th>
+                                        <th>Alerts</th>
+                                        <th>Last Checked</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reputation-tbody">
+                                    <!-- Reputation data will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <button onclick="previousReputationPage()" id="reputation-prev-btn" disabled>Previous</button>
+                            <span id="reputation-page-info">Page 1 of 1</span>
+                            <button onclick="nextReputationPage()" id="reputation-next-btn" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Maps Section -->
+                <section id="maps-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Global Threat Map</h2>
+                    </div>
+                    <div class="map-stats">
+                        <div class="stat-card critical">
+                            <h3>Critical</h3>
+                            <span class="stat-value" id="critical-threats-count">0</span>
+                        </div>
+                        <div class="stat-card high">
+                            <h3>High</h3>
+                            <span class="stat-value" id="high-threats-count">0</span>
+                        </div>
+                        <div class="stat-card medium">
+                            <h3>Medium</h3>
+                            <span class="stat-value" id="medium-threats-count">0</span>
+                        </div>
+                        <div class="stat-card total">
+                            <h3>Total</h3>
+                            <span class="stat-value" id="total-threats-count">0</span>
+                        </div>
+                        <div class="stat-card countries">
+                            <h3>Countries</h3>
+                            <span class="stat-value" id="countries-count">0</span>
+                        </div>
+                    </div>
+                    <div class="map-fullscreen-container">
+                        <div id="simple-map" class="threat-map-full"></div>
+                    </div>
+                    <div class="threat-details-panel" id="threat-details-panel">
+                        <div class="panel-header">
+                            <h3>Threat Details</h3>
+                            <button class="close-btn" onclick="closeThreatPanel()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="panel-content">
+                            <div class="threat-summary">
+                                <div class="threat-info">
+                                    <h4 id="threat-title">Select a threat</h4>
+                                    <p id="threat-description">Click on any threat marker to view details</p>
+                                </div>
+                                <div class="threat-metrics">
+                                    <div class="metric">
+                                        <label>Severity:</label>
+                                        <span id="threat-severity">-</span>
+                                    </div>
+                                    <div class="metric">
+                                        <label>Type:</label>
+                                        <span id="threat-type">-</span>
+                                    </div>
+                                    <div class="metric">
+                                        <label>Source:</label>
+                                        <span id="threat-source">-</span>
+                                    </div>
+                                    <div class="metric">
+                                        <label>Time:</label>
+                                        <span id="threat-time">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="threat-actions">
+                                <button class="btn btn-primary" onclick="investigateThreat()">
+                                    <i class="fas fa-search"></i> Investigate
+                                </button>
+                                <button class="btn btn-secondary" onclick="blockThreat()">
+                                    <i class="fas fa-ban"></i> Block
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section id="analytics-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Security Analytics</h2>
+                    </div>
+                    <div class="analytics-grid">
+                        <div class="analytics-card">
+                            <h3>Alert Fatigue Metrics</h3>
+                            <div class="metrics-chart" id="fatigue-metrics-chart"></div>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Response Time Analysis</h3>
+                            <div class="metrics-chart" id="response-time-chart"></div>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Threat Evolution</h3>
+                            <div class="metrics-chart" id="threat-evolution-chart"></div>
+                        </div>
+                        <div class="analytics-card">
+                            <h3>Top Threat Actors</h3>
+                            <div class="actor-list" id="top-actors-list"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Logs Section -->
+                <section id="logs-section" class="content-section">
+                    <div class="section-header">
+                        <h2>System Logs</h2>
+                        <div class="logs-controls">
+                            <button class="btn btn-primary" onclick="refreshLogs()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button class="btn btn-secondary" onclick="exportLogs()">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                            <button class="btn btn-danger" onclick="cleanupLogs()">
+                                <i class="fas fa-trash"></i> Cleanup
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Log Filters -->
+                    <div class="logs-filters">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>Log Level:</label>
+                                <select id="log-level-filter" onchange="applyLogFilters()">
+                                    <option value="">All Levels</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Category:</label>
+                                <select id="log-category-filter" onchange="applyLogFilters()">
+                                    <option value="">All Categories</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Module:</label>
+                                <select id="log-module-filter" onchange="applyLogFilters()">
+                                    <option value="">All Modules</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Time Range:</label>
+                                <select id="log-time-filter" onchange="applyLogFilters()">
+                                    <option value="1h">Last Hour</option>
+                                    <option value="6h">Last 6 Hours</option>
+                                    <option value="24h" selected>Last 24 Hours</option>
+                                    <option value="7d">Last 7 Days</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>Search:</label>
+                                <input type="text" id="log-search-input" placeholder="Search logs..." onkeyup="handleSearchKeyup(event)">
+                            </div>
+                            <div class="filter-group">
+                                <label>User ID:</label>
+                                <select id="log-user-filter" onchange="applyLogFilters()">
+                                    <option value="">All Users</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>IP Address:</label>
+                                <select id="log-ip-filter" onchange="applyLogFilters()">
+                                    <option value="">All IPs</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Error Code:</label>
+                                <select id="log-error-filter" onchange="applyLogFilters()">
+                                    <option value="">All Errors</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log Statistics -->
+                    <div class="logs-stats">
+                        <div class="stat-card">
+                            <h3>Total Logs</h3>
+                            <span class="stat-value" id="total-logs">0</span>
+                        </div>
+                        <div class="stat-card error">
+                            <h3>Errors</h3>
+                            <span class="stat-value" id="error-logs">0</span>
+                        </div>
+                        <div class="stat-card critical">
+                            <h3>Critical</h3>
+                            <span class="stat-value" id="critical-logs">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Avg Response Time</h3>
+                            <span class="stat-value" id="avg-response-time">0ms</span>
+                        </div>
+                    </div>
+
+                    <!-- Log Timeline Chart -->
+                    <div class="logs-timeline">
+                        <h3>Log Timeline</h3>
+                        <canvas id="log-timeline-chart"></canvas>
+                    </div>
+
+                    <!-- Logs Table -->
+                    <div class="logs-table-container">
+                        <div class="table-header">
+                            <h3>Log Entries</h3>
+                            <div class="table-controls">
+                                <span class="log-count" id="log-count">0 logs</span>
+                                <button class="btn btn-sm" onclick="toggleAutoRefresh()">
+                                    <i class="fas fa-play" id="auto-refresh-icon"></i> Auto Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="logs-table-wrapper">
+                            <table class="logs-table">
+                                <thead>
+                                    <tr>
+                                        <th onclick="sortLogs('timestamp')">Timestamp <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortLogs('level')">Level <i class="fas fa-sort"></i></th>
+                                        <th onclick="sortLogs('category')">Category <i class="fas fa-sort"></i></th>
+                                        <th>Message</th>
+                                        <th onclick="sortLogs('module')">Module <i class="fas fa-sort"></i></th>
+                                        <th>User</th>
+                                        <th>IP Address</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logs-table-body">
+                                    <!-- Log entries will be populated here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="pagination">
+                            <button onclick="previousPage()" id="prev-btn" disabled>Previous</button>
+                            <span id="page-info">Page 1 of 1</span>
+                            <button onclick="nextPage()" id="next-btn" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Alert Details Modal -->
+    <div id="alert-modal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>Alert Details</h3>
+                <span class="close" onclick="closeModal('alert-modal')">&times;</span>
+            </div>
+            <div class="modal-body" id="alert-modal-body">
+                <!-- Alert details will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Create Modal -->
+    <div id="create-alert-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Alert</h3>
+                <span class="close" onclick="closeModal('create-alert-modal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="create-alert-form">
+                    <div class="form-group">
+                        <label>Title:</label>
+                        <input type="text" id="alert-title" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Description:</label>
+                        <textarea id="alert-description" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Severity:</label>
+                        <select id="alert-severity" required>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Category:</label>
+                        <select id="alert-category" required>
+                            <option value="malware">Malware</option>
+                            <option value="phishing">Phishing</option>
+                            <option value="ddos">DDoS</option>
+                            <option value="intrusion">Intrusion</option>
+                            <option value="data_breach">Data Breach</option>
+                            <option value="policy_violation">Policy Violation</option>
+                            <option value="anomaly">Anomaly</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Source:</label>
+                        <input type="text" id="alert-source" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Confidence (%):</label>
+                        <input type="number" id="alert-confidence" min="0" max="100" value="50" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Create Alert</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('create-alert-modal')">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Details Modal -->
+    <div id="log-modal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>Log Details</h3>
+                <span class="close" onclick="closeModal('log-modal')">&times;</span>
+            </div>
+            <div class="modal-body" id="log-modal-body">
+                <!-- Log details will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/map.js"></script>
+    <script src="/static/js/analytics.js"></script>
+    <script src="/static/js/logs.js"></script>
+</body>
+</html>
