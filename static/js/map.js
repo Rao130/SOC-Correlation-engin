@@ -1,20 +1,75 @@
 // Simple Map - Clean and Working
 class SimpleMap {
     constructor() {
-        this.threats = [
-            {id: 1, name: "DDoS Attack", level: "critical", country: "USA", x: 20, y: 35},
-            {id: 2, name: "Malware", level: "high", country: "UK", x: 45, y: 30},
-            {id: 3, name: "Phishing", level: "medium", country: "Japan", x: 80, y: 40},
-            {id: 4, name: "Data Breach", level: "critical", country: "Australia", x: 85, y: 75},
-            {id: 5, name: "Suspicious", level: "low", country: "Russia", x: 55, y: 20}
-        ];
+        this.threats = [];
         this.init();
     }
 
-    init() {
+    async init() {
+        await this.loadRealThreatData();
         this.createMap();
         this.addMarkers();
         this.updateStats();
+    }
+
+    async loadRealThreatData() {
+        try {
+            const response = await fetch('/api/alerts/?limit=50');
+            if (response.ok) {
+                const alerts = await response.json();
+                this.threats = alerts.map((alert, index) => ({
+                    id: alert._id || index,
+                    name: alert.title || 'Security Threat',
+                    level: alert.severity || 'medium',
+                    country: this.getCountryFromIP(alert.source_ip) || 'Unknown',
+                    x: Math.random() * 80 + 10, // Random position on map
+                    y: Math.random() * 80 + 10,
+                    source_ip: alert.source_ip,
+                    description: alert.description,
+                    timestamp: alert.timestamp,
+                    category: alert.category
+                }));
+                console.log('Loaded real threats:', this.threats.length);
+            } else {
+                // Fallback to mock data
+                this.threats = [
+                    {id: 1, name: "DDoS Attack", level: "critical", country: "USA", x: 20, y: 35},
+                    {id: 2, name: "Malware", level: "high", country: "UK", x: 45, y: 30},
+                    {id: 3, name: "Phishing", level: "medium", country: "Japan", x: 80, y: 40}
+                ];
+            }
+        } catch (error) {
+            console.error('Error loading threat data:', error);
+            // Fallback to mock data
+            this.threats = [
+                {id: 1, name: "DDoS Attack", level: "critical", country: "USA", x: 20, y: 35},
+                {id: 2, name: "Malware", level: "high", country: "UK", x: 45, y: 30}
+            ];
+        }
+    }
+
+    getCountryFromIP(ip) {
+        if (!ip) return null;
+        
+        // Simple IP to country mapping (mock)
+        const ipRanges = {
+            '192.168': 'Local',
+            '10.': 'Local', 
+            '172.16': 'Local',
+            '203.0.113': 'USA',
+            '198.51.100': 'UK',
+            '192.0.2': 'Japan',
+            '172.20': 'Australia',
+            '192.88.99': 'Russia'
+        };
+        
+        for (const range in ipRanges) {
+            if (ip.startsWith(range)) {
+                return ipRanges[range];
+            }
+        }
+        
+        return 'Unknown';
     }
 
     createMap() {
@@ -115,11 +170,11 @@ function showThreat(id) {
     const panel = document.getElementById('threat-details-panel');
     if (panel) {
         document.getElementById('threat-title').textContent = threat.name;
-        document.getElementById('threat-description').textContent = `Threat detected in ${threat.country}`;
+        document.getElementById('threat-description').textContent = threat.description || `Threat detected in ${threat.country}`;
         document.getElementById('threat-severity').textContent = threat.level.toUpperCase();
-        document.getElementById('threat-type').textContent = 'SECURITY ALERT';
-        document.getElementById('threat-source').textContent = 'Threat Intel';
-        document.getElementById('threat-time').textContent = new Date().toLocaleString();
+        document.getElementById('threat-type').textContent = threat.category || 'SECURITY ALERT';
+        document.getElementById('threat-source').textContent = threat.source_ip || 'Unknown Source';
+        document.getElementById('threat-time').textContent = threat.timestamp ? new Date(threat.timestamp).toLocaleString() : new Date().toLocaleString();
         panel.classList.add('active');
         window.currentThreat = threat;
     }

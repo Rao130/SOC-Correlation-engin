@@ -55,25 +55,54 @@ class LogService:
         try:
             if self.database_manager:
                 db = self.database_manager.get_database()
-                collection = db.logs  # Get the logs collection
+                logs_data = db.logs.data if hasattr(db.logs, 'data') else db.logs
+                
+                # Add buffer logs to existing logs
                 for log_entry in self.log_buffer:
-                    await collection.insert_one(log_entry)
+                    logs_data.append(log_entry)
+                
+                # Keep only last 1000 logs
+                if len(logs_data) > 1000:
+                    logs_data[:] = logs_data[-1000:]
+                
+                # Save to file
+                db._save_data()
+                
             self.log_buffer.clear()
         except Exception as e:
             logger.error(f"Failed to flush log buffer: {e}")
     
-    async def get_logs(self, log_filter: LogFilter, skip: int = 0, limit: int = 100) -> List[LogEntry]:
-        """Get logs with filtering"""
+    async def get_logs(self, log_filter: LogFilter = None, skip: int = 0, limit: int = 100) -> List[LogEntry]:
+        """Get logs with filtering and pagination"""
         try:
             if self.database_manager:
                 db = self.database_manager.get_database()
-                collection = db.logs  # Get the logs collection
-                query = self._build_query(log_filter)
+                logs_data = db.logs.data if hasattr(db.logs, 'data') else db.logs
                 
-                cursor = collection.find(query).sort("timestamp", -1).skip(skip).limit(limit)
-                logs = await cursor.to_list()
+                # Apply filters
+                filtered_logs = logs_data
+                if log_filter:
+                    if log_filter.level:
+                        filtered_logs = [log for log in filtered_logs if log.get('level') == log_filter.level]
+                    if log_filter.search_text:
+                        search_lower = log_filter.search_text.lower()
+                        filtered_logs = [log for log in filtered_logs if search_lower in log.get('message', '').lower()]
                 
-                return [LogEntry(**log) for log in logs]
+                # Sort by timestamp (newest first)
+                filtered_logs.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                
+                # Pagination
+                paginated_logs = filtered_logs[skip:skip + limit]
+                
+                return [LogEntry(**log) if 'category' in log and 'function' in log else LogEntry(**{
+                    **log,
+                    'category': log.get('category', 'system').lower(),
+                    'function': log.get('function', 'unknown'),
+                    'module': log.get('module', 'unknown'),
+                    'message': log.get('message', ''),
+                    'level': log.get('level', 'INFO').upper(),
+                    'timestamp': log.get('timestamp', datetime.utcnow())
+                }) for log in paginated_logs]
             return []
         except Exception as e:
             logger.error(f"Failed to get logs: {e}")
@@ -84,78 +113,83 @@ class LogService:
         try:
             if self.database_manager:
                 db = self.database_manager.get_database()
-                collection = db.logs  # Get the logs collection
+                logs_data = db.logs.data if hasattr(db.logs, 'data') else db.logs
+                
+                # Filter logs by time
                 start_time = datetime.utcnow() - timedelta(hours=hours)
+                recent_logs = [log for log in logs_data if log.get('timestamp', '') >= start_time.isoformat()]
                 
                 # Total logs
-                total_logs = await collection.count_documents({
-                    "timestamp": {"$gte": start_time}
-                })
+                total_logs = len(recent_logs)
                 
                 # Logs by level
-                level_pipeline = [
-                    {"$match": {"timestamp": {"$gte": start_time}}},
-                    {"$group": {"_id": "$level", "count": {"$sum": 1}}}
-                ]
-                level_results = await collection.aggregate(level_pipeline).to_list()
-                logs_by_level = {r["_id"]: r["count"] for r in level_results}
+                level_counts = {}
+                for log in recent_logs:
+                    level = log.get('level', 'INFO')
+                    level_counts[level] = level_counts.get(level, 0) + 1
                 
-                # Logs by category
-                category_pipeline = [
-                    {"$match": {"timestamp": {"$gte": start_time}}},
-                    {"$group": {"_id": "$category", "count": {"$sum": 1}}}
-                ]
-                category_results = await collection.aggregate(category_pipeline).to_list()
-                logs_by_category = {r["_id"]: r["count"] for r in category_results}
+                # Most common sources
+                source_counts = {}
+                for log in recent_logs:
+                    source = log.get('source', 'unknown')
+                    source_counts[source] = source_counts.get(source, 0) + 1
                 
-                # Recent errors
-                recent_errors = await collection.count_documents({
-                    "timestamp": {"$gte": start_time},
-                    "level": {"$in": ["ERROR", "CRITICAL"]}
-                })
-                
-                # Critical alerts
-                critical_alerts = await collection.count_documents({
-                    "timestamp": {"$gte": start_time},
-                    "level": "CRITICAL",
-                    "category": "alert"
-                })
-                
-                # Top error codes
-                error_pipeline = [
-                    {"$match": {"timestamp": {"$gte": start_time}, "error_code": {"$ne": None}}},
-                    {"$group": {"_id": "$error_code", "count": {"$sum": 1}}},
-                    {"$sort": {"count": -1}},
-                    {"$limit": 10}
-                ]
-                error_results = await collection.aggregate(error_pipeline).to_list()
-                top_error_codes = {r["_id"]: r["count"] for r in error_results}
+                # Get top sources
+                top_sources = sorted(source_counts.items(), key=lambda x: x[1], reverse=True)[:5]
                 
                 return LogStats(
                     total_logs=total_logs,
-                    logs_by_level=logs_by_level,
-                    logs_by_category=logs_by_category,
-                    recent_errors=recent_errors,
-                    critical_alerts=critical_alerts,
-                    top_error_codes=top_error_codes
+                    level_counts=level_counts,
+                    top_sources=[{"source": src, "count": cnt} for src, cnt in top_sources],
+                    error_rate=level_counts.get('ERROR', 0) / max(total_logs, 1) * 100,
+                    warning_rate=level_counts.get('WARNING', 0) / max(total_logs, 1) * 100
                 )
-            
-            return LogStats(
-                total_logs=0,
-                logs_by_level={},
-                logs_by_category={},
-                recent_errors=0,
-                critical_alerts=0
-            )
+            return LogStats(total_logs=0, level_counts={}, top_sources=[], error_rate=0, warning_rate=0)
         except Exception as e:
             logger.error(f"Failed to get log stats: {e}")
-            return LogStats(
-                total_logs=0,
-                logs_by_level={},
-                logs_by_category={},
-                recent_errors=0,
-                critical_alerts=0
-            )
+            return LogStats(total_logs=0, level_counts={}, top_sources=[], error_rate=0, warning_rate=0)
+    
+    async def get_log_timeline(self, hours: int = 24) -> List[Dict]:
+        """Get log timeline data"""
+        try:
+            if self.database_manager:
+                db = self.database_manager.get_database()
+                logs_data = db.logs.data if hasattr(db.logs, 'data') else db.logs
+                
+                # Filter logs by time
+                start_time = datetime.utcnow() - timedelta(hours=hours)
+                recent_logs = [log for log in logs_data if log.get('timestamp', '') >= start_time.isoformat()]
+                
+                # Group by hour
+                timeline_data = {}
+                for log in recent_logs:
+                    try:
+                        timestamp = datetime.fromisoformat(log.get('timestamp', '').replace('Z', '+00:00'))
+                        hour_key = timestamp.strftime('%Y-%m-%d %H:00')
+                        
+                        if hour_key not in timeline_data:
+                            timeline_data[hour_key] = {'INFO': 0, 'WARNING': 0, 'ERROR': 0, 'CRITICAL': 0}
+                        
+                        level = log.get('level', 'INFO')
+                        timeline_data[hour_key][level] = timeline_data[hour_key].get(level, 0) + 1
+                    except:
+                        continue
+                
+                # Convert to list and sort
+                timeline = [
+                    {
+                        'timestamp': hour,
+                        'counts': counts,
+                        'total': sum(counts.values())
+                    }
+                    for hour, counts in timeline_data.items()
+                ]
+                
+                return sorted(timeline, key=lambda x: x['timestamp'])
+            return []
+        except Exception as e:
+            logger.error(f"Failed to get log timeline: {e}")
+            return []
     
     def _build_query(self, log_filter: LogFilter) -> Dict[str, Any]:
         """Build MongoDB query from filter"""

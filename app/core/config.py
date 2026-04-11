@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import List, Optional
 import os
+import json
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -13,17 +14,26 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # Database
-    DATABASE_TYPE: str = "file"
-    DATABASE_URL: str = "file://data/"
-    REDIS_URL: str = "file://data/"
+    DATABASE_TYPE: str = "mongodb"
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    DATABASE_NAME: str = "soc_correlation_engine"
+    REDIS_URL: str = "redis://localhost:6379"
     
     # Security
     SECRET_KEY: str = "your-super-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
-    # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    # CORS - Handle both string and list formats
+    @property
+    def ALLOWED_ORIGINS(self) -> List[str]:
+        origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000,http://127.0.0.1:59743,http://127.0.0.1:8000")
+        if origins_str.startswith("["):
+            try:
+                return json.loads(origins_str)
+            except:
+                pass
+        return [origin.strip() for origin in origins_str.split(",")]
     
     # External API Keys
     VIRUSTOTAL_API_KEY: Optional[str] = None
@@ -63,8 +73,8 @@ class Settings(BaseSettings):
     ANOMALY_THRESHOLD: float = 0.85
     
     # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = 100
-    RATE_LIMIT_BURST: int = 200
+    RATE_LIMIT_WINDOW_MS: int = 900000
+    RATE_LIMIT_MAX_REQUESTS: int = 100
     
     # Pagination
     DEFAULT_PAGE_SIZE: int = 20
@@ -77,6 +87,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra fields in .env
 
 # Create settings instance
 settings = Settings()

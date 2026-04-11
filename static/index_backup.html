@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Correlation Engine - Security Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-shield-alt"></i>
+            <span>SOC Correlation Engine</span>
+        </div>
+        <div class="nav-tabs">
+            <a href="#" class="nav-tab active"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+            <a href="#" class="nav-tab"><i class="fas fa-exclamation-triangle"></i> Offenses</a>
+            <a href="#" class="nav-tab"><i class="fas fa-search"></i> Investigations</a>
+            <a href="#" class="nav-tab"><i class="fas fa-brain"></i> Intelligence</a>
+            <a href="#" class="nav-tab"><i class="fas fa-cog"></i> Configure</a>
+        </div>
+        <div class="nav-right">
+            <div class="live-indicator">
+                <span class="live-dot"></span>
+                <span>Live Data</span>
+            </div>
+            <button class="icon-btn"><i class="fas fa-bell"></i><span class="badge">3</span></button>
+            <button class="icon-btn"><i class="fas fa-user-circle"></i></button>
+        </div>
+    </nav>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+        <!-- Left Sidebar Filters -->
+        <aside class="filter-sidebar">
+            <div class="filter-section">
+                <div class="filter-header">
+                    <span>Filter</span>
+                    <button class="clear-btn">Clear filters</button>
+                </div>
+                <div class="applied-filters">
+                    <span class="filter-tag">Status: Open <i class="fas fa-times"></i></span>
+                </div>
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Find filter...">
+                </div>
+            </div>
+
+            <div class="filter-accordion">
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Magnitude</span>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Severity</span>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Assigned To</span>
+                    </div>
+                </div>
+                <div class="accordion-item open">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Status</span>
+                    </div>
+                    <div class="accordion-content">
+                        <label class="filter-checkbox">
+                            <input type="checkbox"> Closed <span class="count">(120)</span>
+                        </label>
+                        <label class="filter-checkbox">
+                            <input type="checkbox" checked> Open <span class="count">(28)</span>
+                        </label>
+                        <label class="filter-checkbox">
+                            <input type="checkbox"> Hidden <span class="count">(1)</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Start Time</span>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Offense Type</span>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <div class="accordion-header">
+                        <i class="fas fa-chevron-down"></i>
+                        <span>Destination Network</span>
+                    </div>
+                </div>
+            </div>
+
+            <button class="update-dashboard-btn">
+                <i class="fas fa-sync-alt"></i> Update Dashboard
+            </button>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content-area">
+            <!-- KPI Cards Row -->
+            <div class="kpi-section">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">ACCESS NOTABLES</span>
+                        <span class="kpi-trend up"><i class="fas fa-arrow-up"></i> +72</span>
+                    </div>
+                    <div class="kpi-value critical">72</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">ENDPOINT NOTABLES</span>
+                        <span class="kpi-trend">0</span>
+                    </div>
+                    <div class="kpi-value normal">0</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">NETWORK NOTABLES</span>
+                        <span class="kpi-trend up"><i class="fas fa-arrow-up"></i> +202</span>
+                    </div>
+                    <div class="kpi-value high">202</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">IDENTITY NOTABLES</span>
+                        <span class="kpi-trend">0</span>
+                    </div>
+                    <div class="kpi-value normal">0</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">AUDIT NOTABLES</span>
+                        <span class="kpi-trend">0</span>
+                    </div>
+                    <div class="kpi-value normal">0</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">THREAT NOTABLES</span>
+                        <span class="kpi-trend up"><i class="fas fa-arrow-up"></i> +83</span>
+                    </div>
+                    <div class="kpi-value high">83</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">UBA NOTABLES</span>
+                        <span class="kpi-trend up"><i class="fas fa-arrow-up"></i> +3</span>
+                    </div>
+                    <div class="kpi-value medium">3</div>
+                </div>
+            </div>
+
+            <!-- Charts Row 1 -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">Offenses by Magnitude</h3>
+                    <div class="chart-container">
+                        <canvas id="magnitudeChart"></canvas>
+                    </div>
+                    <div class="chart-legend">
+                        <span class="legend-item"><span class="dot high"></span> High</span>
+                        <span class="legend-item"><span class="dot medium"></span> Medium</span>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Offenses by Assignee</h3>
+                    <div class="chart-container">
+                        <canvas id="assigneeChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Offenses by Type</h3>
+                    <div class="chart-container">
+                        <canvas id="typeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row 2 -->
+            <div class="charts-row">
+                <div class="chart-card wide">
+                    <h3 class="chart-title">Notable Events by Urgency</h3>
+                    <div class="chart-container">
+                        <canvas id="urgencyChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card wide">
+                    <h3 class="chart-title">Notable Events Over Time</h3>
+                    <div class="chart-container">
+                        <canvas id="timeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row 3 -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">Alarms by Day (Past 30 Days)</h3>
+                    <div class="chart-container">
+                        <canvas id="alarmsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Top Alarms</h3>
+                    <div class="chart-container">
+                        <canvas id="topAlarmsChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Identified Threats</h3>
+                    <div class="chart-container">
+                        <canvas id="threatsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table Section -->
+            <div class="table-section">
+                <div class="table-header">
+                    <h3><i class="fas fa-list"></i> Offense List</h3>
+                    <div class="table-actions">
+                        <button class="action-btn"><i class="fas fa-columns"></i></button>
+                        <button class="action-btn"><i class="fas fa-cog"></i></button>
+                        <div class="dropdown">
+                            <button class="action-btn primary">Actions <i class="fas fa-chevron-down"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox"></th>
+                                <th>Magnitude <i class="fas fa-sort"></i></th>
+                                <th>ID <i class="fas fa-sort-down"></i></th>
+                                <th>Description</th>
+                                <th>Destination IPs</th>
+                                <th>Offense Type</th>
+                                <th>Offense Source</th>
+                                <th>Source IPs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar" style="width: 50%"></span> 5</td>
+                                <td>660</td>
+                                <td>Possible Shared Account contamination...</td>
+                                <td><span class="ip-tag ext">EXT</span> 127.0.0.1</td>
+                                <td>Username</td>
+                                <td><span class="source-tag">USER</span> cmccullom</td>
+                                <td><span class="ip-tag">Multiple (2)</span></td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar high" style="width: 80%"></span> 6</td>
+                                <td>659</td>
+                                <td>Excessive Firewall Denies on a C...</td>
+                                <td><span class="ip-tag int">INT</span> 10.10.4.33</td>
+                                <td>Source IP</td>
+                                <td><span class="source-tag">INT</span> 192.168.1.177</td>
+                                <td><span class="ip-tag int">INT</span> 192...</td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar high" style="width: 80%"></span> 6</td>
+                                <td>658</td>
+                                <td>Multiple Failed Logins to a Compl...</td>
+                                <td><span class="ip-tag int">INT</span> 192.168.1.111</td>
+                                <td>Username</td>
+                                <td><span class="source-tag">USER</span> JTaylor</td>
+                                <td><span class="ip-tag int">INT</span> 10.4...</td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar high" style="width: 80%"></span> 6</td>
+                                <td>657</td>
+                                <td>Multiple Failed Logins to a Compl...</td>
+                                <td><span class="ip-tag int">INT</span> 192.168.1.111</td>
+                                <td>Username</td>
+                                <td><span class="source-tag">USER</span> JEastwood</td>
+                                <td><span class="ip-tag int">INT</span> 10.4...</td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar high" style="width: 80%"></span> 6</td>
+                                <td>656</td>
+                                <td>Multiple Failed Logins to a Compl...</td>
+                                <td><span class="ip-tag int">INT</span> 192.168.1.111</td>
+                                <td>Username</td>
+                                <td><span class="source-tag">USER</span> NWashington</td>
+                                <td><span class="ip-tag int">INT</span> 10.4...</td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td><span class="severity-bar high" style="width: 80%"></span> 6</td>
+                                <td>655</td>
+                                <td>Multiple Failed Logins to a Compl...</td>
+                                <td><span class="ip-tag int">INT</span> 192.168.1.111</td>
+                                <td>Username</td>
+                                <td><span class="source-tag">USER</span> KWilson</td>
+                                <td><span class="ip-tag int">INT</span> 10.4...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-footer">
+                    <span>Showing 6 of 149 offenses</span>
+                    <div class="pagination">
+                        <button class="page-btn" disabled><i class="fas fa-chevron-left"></i> Prev</button>
+                        <span class="page-number active">1</span>
+                        <span class="page-number">2</span>
+                        <span class="page-number">3</span>
+                        <span class="ellipsis">...</span>
+                        <button class="page-btn">Next <i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Charts Row -->
+            <div class="charts-row">
+                <div class="chart-card">
+                    <h3 class="chart-title">User Authentication Trend</h3>
+                    <div class="chart-container">
+                        <canvas id="authChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">User Activity Trend</h3>
+                    <div class="chart-container">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Identified CVEs</h3>
+                    <div class="chart-container">
+                        <canvas id="cveChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Donut Charts Row -->
+            <div class="charts-row">
+                <div class="chart-card donut">
+                    <h3 class="chart-title">Top User (Origin)</h3>
+                    <div class="chart-container">
+                        <canvas id="userOriginChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card donut">
+                    <h3 class="chart-title">Top User (Impacted)</h3>
+                    <div class="chart-container">
+                        <canvas id="userImpactedChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card donut">
+                    <h3 class="chart-title">Top Host (Origin)</h3>
+                    <div class="chart-container">
+                        <canvas id="hostOriginChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card donut">
+                    <h3 class="chart-title">Top Host (Impacted)</h3>
+                    <div class="chart-container">
+                        <canvas id="hostImpactedChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Chart.js Configuration
+        Chart.defaults.color = '#8b949e';
+        Chart.defaults.borderColor = '#30363d';
+        
+        // Offenses by Magnitude - Donut Chart
+        const magnitudeCtx = document.getElementById('magnitudeChart').getContext('2d');
+        new Chart(magnitudeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['High', 'Medium'],
+                datasets: [{
+                    data: [1, 99],
+                    backgroundColor: ['#ff5555', '#ff9500'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Offenses by Assignee - Bar Chart
+        const assigneeCtx = document.getElementById('assigneeChart').getContext('2d');
+        new Chart(assigneeCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Unassigned', 'socjtcp'],
+                datasets: [{
+                    data: [145, 4],
+                    backgroundColor: '#bd93f9',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#30363d' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Offenses by Type - Donut Chart
+        const typeCtx = document.getElementById('typeChart').getContext('2d');
+        new Chart(typeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Username', 'Source IP', 'Event Name', 'Destination IP'],
+                datasets: [{
+                    data: [41, 36, 12, 11],
+                    backgroundColor: ['#bd93f9', '#58a6ff', '#3fb950', '#ff79c6'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 10 }
+                    }
+                }
+            }
+        });
+
+        // Notable Events by Urgency - Horizontal Bar
+        const urgencyCtx = document.getElementById('urgencyChart').getContext('2d');
+        new Chart(urgencyCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Critical', 'High', 'Medium', 'Low'],
+                datasets: [{
+                    label: 'Count',
+                    data: [55, 85, 72, 130],
+                    backgroundColor: ['#ff5555', '#ff9500', '#f1fa8c', '#3fb950'],
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, grid: { color: '#30363d' } },
+                    y: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Notable Events Over Time - Line Chart
+        const timeCtx = document.getElementById('timeChart').getContext('2d');
+        new Chart(timeCtx, {
+            type: 'line',
+            data: {
+                labels: ['4:00 PM', '6:00 PM', '8:00 PM', '10:00 PM', '12:00 AM', '2:00 AM', '4:00 AM', '6:00 AM', '8:00 AM', '10:00 AM', '12:00 PM'],
+                datasets: [
+                    {
+                        label: 'Access',
+                        data: [5, 8, 12, 6, 4, 7, 9, 11, 15, 8, 6],
+                        borderColor: '#ff5555',
+                        backgroundColor: 'rgba(255, 85, 85, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Network',
+                        data: [3, 5, 8, 10, 7, 5, 6, 8, 12, 10, 7],
+                        borderColor: '#ff9500',
+                        backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    },
+                    {
+                        label: 'Threat',
+                        data: [2, 3, 5, 4, 3, 4, 5, 6, 8, 5, 4],
+                        borderColor: '#bd93f9',
+                        backgroundColor: 'rgba(189, 147, 249, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12 }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#30363d' } },
+                    x: { grid: { color: '#30363d' } }
+                }
+            }
+        });
+
+        // Alarms by Day - Line Chart
+        const alarmsCtx = document.getElementById('alarmsChart').getContext('2d');
+        new Chart(alarmsCtx, {
+            type: 'line',
+            data: {
+                labels: ['Feb 16', 'Feb 18', 'Feb 20', 'Feb 23', 'Feb 25', 'Feb 27', 'Mar 01', 'Mar 03', 'Mar 05', 'Mar 08'],
+                datasets: [{
+                    label: 'Alarms',
+                    data: [45, 48, 52, 850, 120, 180, 220, 200, 190, 185],
+                    borderColor: '#ff5555',
+                    backgroundColor: 'rgba(255, 85, 85, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#30363d' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Top Alarms - Line Chart
+        const topAlarmsCtx = document.getElementById('topAlarmsChart').getContext('2d');
+        new Chart(topAlarmsCtx, {
+            type: 'line',
+            data: {
+                labels: ['Tue 03', 'Thu 05', 'Sat 07', 'Mon 09', 'Wed 11', 'Fri 13'],
+                datasets: [
+                    {
+                        label: 'AIE Suspicious Process',
+                        data: [40, 35, 30, 28, 25, 22],
+                        borderColor: '#ff5555',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'AIE Lateral Movement',
+                        data: [12, 10, 8, 9, 7, 6],
+                        borderColor: '#ff9500',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'AIE Execution',
+                        data: [8, 7, 6, 5, 5, 4],
+                        borderColor: '#f1fa8c',
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12, font: { size: 10 } }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#30363d' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Identified Threats - Horizontal Bar
+        const threatsCtx = document.getElementById('threatsChart').getContext('2d');
+        new Chart(threatsCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Misuse Detected', 'SSL/TLS weak cipher', 'Win.Trojan.Coin', 'Win.Trojan.Dyre', 'apache Struts CVE', 'apache httpd CVE'],
+                datasets: [{
+                    data: [198, 26, 26, 26, 26, 26],
+                    backgroundColor: '#58a6ff',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, grid: { color: '#30363d' } },
+                    y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+
+        // User Authentication Trend
+        const authCtx = document.getElementById('authChart').getContext('2d');
+        new Chart(authCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Tue 03', 'Thu 05', 'Sat 07', 'Mon 09'],
+                datasets: [
+                    { label: 'admin1', data: [12, 12, 12, 12], backgroundColor: '#bd93f9' },
+                    { label: 'martha.burnett', data: [3, 3, 3, 3], backgroundColor: '#58a6ff' },
+                    { label: 'mike.jackson', data: [2, 2, 2, 2], backgroundColor: '#3fb950' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12, font: { size: 10 } }
+                    }
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, beginAtZero: true, grid: { color: '#30363d' } }
+                }
+            }
+        });
+
+        // User Activity Trend
+        const activityCtx = document.getElementById('activityChart').getContext('2d');
+        new Chart(activityCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Tue 03', 'Thu 05', 'Sat 07', 'Mon 09'],
+                datasets: [
+                    { label: 'martha.burnett', data: [45, 80, 80, 80], backgroundColor: '#ff5555' },
+                    { label: 'mike.jackson', data: [40, 75, 75, 75], backgroundColor: '#ff9500' },
+                    { label: 'matt.williams', data: [35, 70, 70, 70], backgroundColor: '#f1fa8c' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12, font: { size: 10 } }
+                    }
+                },
+                scales: {
+                    x: { stacked: false, grid: { display: false } },
+                    y: { beginAtZero: true, grid: { color: '#30363d' } }
+                }
+            }
+        });
+
+        // Identified CVEs
+        const cveCtx = document.getElementById('cveChart').getContext('2d');
+        new Chart(cveCtx, {
+            type: 'bar',
+            data: {
+                labels: ['CVE-2013-2566', 'CVE-2013-3437', 'CVE-2013-4157', 'CVE-2013-3192', 'CVE-2013-2687'],
+                datasets: [{
+                    data: [36, 36, 36, 36, 36],
+                    backgroundColor: '#58a6ff',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { beginAtZero: true, max: 40, grid: { color: '#30363d' } },
+                    y: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Donut Charts for Users and Hosts
+        const donutConfig = (ctx, labels, data, colors) => {
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        };
+
+        donutConfig(
+            document.getElementById('userOriginChart').getContext('2d'),
+            ['beth.micha', 'martha.burnett', 'andy.sok', 'keith.adams'],
+            [30, 25, 20, 15],
+            ['#ff9500', '#ffb627', '#ffc95c', '#ffe082']
+        );
+
+        donutConfig(
+            document.getElementById('userImpactedChart').getContext('2d'),
+            ['martha.burnett', 'matt.williams', 'gregory.mill', 'mike.jackson'],
+            [35, 25, 20, 15],
+            ['#ff9500', '#ffb627', '#ffc95c', '#ffe082']
+        );
+
+        donutConfig(
+            document.getElementById('hostOriginChart').getContext('2d'),
+            ['192.168.1.1', '192.168.1.2', '192.168.1.3', '192.168.1.4'],
+            [40, 25, 20, 15],
+            ['#00bcd4', '#26c6da', '#4dd0e1', '#80deea']
+        );
+
+        donutConfig(
+            document.getElementById('hostImpactedChart').getContext('2d'),
+            ['webserver1', 'webserver2', '192.168.1.10', '192.168.1.20'],
+            [35, 30, 20, 15],
+            ['#00bcd4', '#26c6da', '#4dd0e1', '#80deea']
+        );
+    </script>
+</body>
+</html>

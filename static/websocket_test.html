@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+    
+    <script src="/static/js/websocket.js"></script>
+    <script>
+        // Monitor WebSocket status
+        setTimeout(() => {
+            const status = document.getElementById('status');
+            const messages = document.getElementById('messages');
+            
+            if (window.wsManager && window.wsManager.isConnected) {
+                status.innerHTML = '✅ WebSocket Connected Successfully';
+                status.style.color = 'green';
+            } else {
+                status.innerHTML = '❌ WebSocket Not Connected (No errors thrown)';
+                status.style.color = 'orange';
+            }
+            
+            // Check for any errors in console
+            console.log('WebSocket test completed - no errors should be visible');
+        }, 3000);
+    </script>
+</body>
+</html>

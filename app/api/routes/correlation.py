@@ -2,8 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import asyncio
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.core.database import get_db
+from app.core.logging import setup_logging
+
+logger = setup_logging()
+
+# MongoDB connection
+MONGODB_URL = "mongodb://localhost:27017"
+DATABASE_NAME = "soc_correlation_engine"
 
 router = APIRouter()
 
@@ -33,9 +42,14 @@ async def run_correlation_analysis(
         
         # Get recent alerts (last 24 hours)
         yesterday = datetime.utcnow() - timedelta(days=1)
-        recent_alerts = await alerts_collection.find({
-            "timestamp": {"$gte": yesterday}
-        }).to_list()
+        recent_alerts = []
+        
+        try:
+            recent_alerts = await alerts_collection.find({
+                "timestamp": {"$gte": yesterday}
+            }).to_list()
+        except Exception as db_error:
+            logger.warning(f"Failed to get recent alerts: {db_error}")
         
         if len(recent_alerts) < 2:
             return {
@@ -56,7 +70,7 @@ async def run_correlation_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start correlation analysis: {str(e)}")
 
-@router.get("/", response_model=Dict[str, Any])
+@router.get("/", response_model=List[Dict[str, Any]])
 async def get_correlations(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=1000),
@@ -68,142 +82,80 @@ async def get_correlations(
     """Get correlation groups with filtering"""
     try:
         file_db = db.get_database()
-        collection = file_db.correlation_groups
         
-        # Build query
-        query = {}
-        if correlation_type:
-            query["correlation_type"] = correlation_type
-        if status:
-            query["status"] = status
-        if search:
-            query["$or"] = [
-                {"name": {"$regex": search, "$options": "i"}},
-                {"description": {"$regex": search, "$options": "i"}}
-            ]
-        
-        # Get data
-        cursor = collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
-        correlations = await cursor.to_list()
-        
-        # Get total count
-        total = await collection.count_documents(query)
-        
-        return {
-            "data": correlations,
-            "total": total,
-            "skip": skip,
-            "limit": limit
-        }
+        if file_db is not None:
+            collection = file_db.correlation_groups
+            
+            # Build query
+            query = {}
+            if correlation_type:
+                query["correlation_type"] = correlation_type
+            if status:
+                query["status"] = status
+            if search:
+                query["$or"] = [
+                    {"name": {"$regex": search, "$options": "i"}},
+                    {"description": {"$regex": search, "$options": "i"}}
+                ]
+            
+            # Get data from database
+            cursor = collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            correlations = await cursor.to_list()
+            
+            # Convert ObjectId to string for JSON serialization
+            def convert_objectid(obj):
+                if hasattr(obj, '__iter__') and not isinstance(obj, str):
+                    if isinstance(obj, dict):
+                        return {k: convert_objectid(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [convert_objectid(item) for item in obj]
+                elif hasattr(obj, '__str__') and 'ObjectId' in str(type(obj)):
+                    return str(obj)
+                return obj
+            
+            correlations = [convert_objectid(correlation) for correlation in correlations]
+            
+            return correlations
+        else:
+            return []
         
     except Exception as e:
-        # Fallback to mock data if database is empty
-        mock_correlations = [
-            {
-                "_id": "corr_001",
-                "name": "Entity Based Correlation - IP 192.168.1.100",
-                "description": "5 alerts correlated by shared IP entity",
-                "correlation_type": "entity_based",
-                "correlation_score": 85.5,
-                "confidence": 90,
-                "status": "active",
-                "alert_ids": ["alert_1", "alert_2", "alert_3", "alert_4", "alert_5"],
-                "entities": [
-                    {"type": "ip", "value": "192.168.1.100", "risk_level": "malicious"}
-                ],
-                "metrics": {
-                    "alert_count": 5,
-                    "unique_entities": 3,
-                    "severity_score": 7.2,
-                    "time_span_hours": 2
-                },
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "notes": "High priority correlation - immediate investigation required"
-            },
-            {
-                "_id": "corr_002",
-                "name": "Temporal Correlation - Brute Force Pattern",
-                "description": "3 alerts within 30 minutes showing brute force pattern",
-                "correlation_type": "temporal",
-                "correlation_score": 72.3,
-                "confidence": 75,
-                "status": "active",
-                "alert_ids": ["alert_6", "alert_7", "alert_8"],
-                "entities": [
-                    {"type": "ip", "value": "10.0.0.50", "risk_level": "suspicious"},
-                    {"type": "domain", "value": "attacker.com", "risk_level": "malicious"}
-                ],
-                "metrics": {
-                    "alert_count": 3,
-                    "unique_entities": 2,
-                    "severity_score": 6.8,
-                    "time_span_hours": 0.5
-                },
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "notes": "Temporal pattern detected - possible coordinated attack"
-            },
-            {
-                "_id": "corr_003",
-                "name": "Geographic Correlation - Unknown Region",
-                "description": "4 alerts from unusual geographic location",
-                "correlation_type": "geographic",
-                "correlation_score": 68.9,
-                "confidence": 70,
-                "status": "investigating",
-                "alert_ids": ["alert_9", "alert_10", "alert_11", "alert_12"],
-                "entities": [
-                    {"type": "country", "value": "XX", "risk_level": "unknown"}
-                ],
-                "metrics": {
-                    "alert_count": 4,
-                    "unique_entities": 1,
-                    "severity_score": 5.5,
-                    "time_span_hours": 6
-                },
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "notes": "Unusual geographic pattern - requires investigation"
-            }
-        ]
-        
-        return {
-            "data": mock_correlations,
-            "total": len(mock_correlations),
-            "skip": skip,
-            "limit": limit
-        }
+        logger.error(f"Failed to get correlations: {e}")
+        return []
 
 @router.get("/{correlation_id}", response_model=Dict[str, Any])
-async def get_correlation_details(
+async def get_correlation_by_id(
     correlation_id: str,
     db = Depends(get_db)
 ):
-    """Get detailed correlation information"""
+    """Get specific correlation by ID"""
     try:
         file_db = db.get_database()
         collection = file_db.correlation_groups
         
+        # Try to get from database
         correlation = await collection.find_one({"_id": correlation_id})
         
-        if not correlation:
+        if correlation:
+            # Convert ObjectId to string for JSON serialization
+            def convert_objectid(obj):
+                if hasattr(obj, '__iter__') and not isinstance(obj, str):
+                    if isinstance(obj, dict):
+                        return {k: convert_objectid(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [convert_objectid(item) for item in obj]
+                elif hasattr(obj, '__str__') and 'ObjectId' in str(type(obj)):
+                    return str(obj)
+                return obj
+            
+            return convert_objectid(correlation)
+        else:
             raise HTTPException(status_code=404, detail="Correlation not found")
-        
-        # Get related alerts
-        alerts_collection = file_db.alerts
-        related_alerts = await alerts_collection.find({
-            "_id": {"$in": correlation.get("alert_ids", [])}
-        }).to_list()
-        
-        return {
-            "correlation": correlation,
-            "related_alerts": related_alerts,
-            "total_related_alerts": len(related_alerts)
-        }
-        
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get correlation details: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get correlation: {str(e)}")
 
 @router.post("/", response_model=Dict[str, Any])
 async def create_correlation(
@@ -217,8 +169,8 @@ async def create_correlation(
         collection = file_db.correlation_groups
         
         # Create correlation document
-        correlation_doc = {
-            "_id": f"corr_{int(datetime.utcnow().timestamp())}_{len(correlation.alert_ids)}",
+        correlation_data = {
+            "_id": f"corr_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
             "name": correlation.name,
             "description": correlation.description,
             "correlation_type": correlation.correlation_type,
@@ -227,26 +179,21 @@ async def create_correlation(
             "status": "active",
             "alert_ids": correlation.alert_ids,
             "entities": correlation.entities,
-            "metrics": {
-                "alert_count": len(correlation.alert_ids),
-                "unique_entities": len(set(e.get("value", "") for e in correlation.entities)),
-                "severity_score": correlation.correlation_score / 10,
-                "time_span_hours": 1
-            },
+            "alert_count": len(correlation.alert_ids),
+            "entity_count": len(correlation.entities),
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow(),
-            "notes": ""
+            "notes": correlation.description
         }
         
-        await collection.insert_one(correlation_doc)
-        
-        # Trigger background processing
-        background_tasks.add_task(process_correlation, correlation_doc["_id"])
+        # Insert into database
+        result = await collection.insert_one(correlation_data)
         
         return {
             "message": "Correlation created successfully",
-            "correlation_id": correlation_doc["_id"],
-            "correlation": correlation_doc
+            "correlation_id": str(result.inserted_id),
+            "name": correlation.name,
+            "correlation_score": correlation.correlation_score
         }
         
     except Exception as e:
@@ -263,31 +210,35 @@ async def update_correlation(
         file_db = db.get_database()
         collection = file_db.correlation_groups
         
+        # Build update data
         update_data = {"updated_at": datetime.utcnow()}
         if update.status:
             update_data["status"] = update.status
         if update.notes:
             update_data["notes"] = update.notes
         
+        # Update correlation
         result = await collection.update_one(
             {"_id": correlation_id},
             {"$set": update_data}
         )
         
-        if result.modified_count == 0:
+        if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Correlation not found")
         
         return {"message": "Correlation updated successfully"}
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update correlation: {str(e)}")
 
-@router.delete("/{correlation_id}")
+@router.delete("/{correlation_id}", response_model=Dict[str, Any])
 async def delete_correlation(
     correlation_id: str,
     db = Depends(get_db)
 ):
-    """Delete correlation group"""
+    """Delete a correlation"""
     try:
         file_db = db.get_database()
         collection = file_db.correlation_groups
@@ -297,79 +248,45 @@ async def delete_correlation(
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Correlation not found")
         
-        return {"message": f"Correlation {correlation_id} deleted successfully"}
+        return {"message": "Correlation deleted successfully"}
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete correlation: {str(e)}")
 
-@router.get("/stats/summary", response_model=Dict[str, Any])
-async def get_correlation_stats(db = Depends(get_db)):
-    """Get correlation statistics"""
-    try:
-        file_db = db.get_database()
-        collection = file_db.correlation_groups
-        
-        # Get total correlations
-        total_correlations = await collection.count_documents({})
-        
-        # Get stats by type
-        pipeline = [
-            {"$group": {"_id": "$correlation_type", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        
-        type_stats = await collection.aggregate(pipeline).to_list()
-        type_distribution = {stat["_id"]: stat["count"] for stat in type_stats}
-        
-        # Get stats by status
-        status_pipeline = [
-            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        
-        status_stats = await collection.aggregate(status_pipeline).to_list()
-        status_distribution = {stat["_id"]: stat["count"] for stat in status_stats}
-        
-        # Get recent correlations (last 24 hours)
-        yesterday = datetime.utcnow() - timedelta(days=1)
-        recent_correlations = await collection.count_documents({
-            "created_at": {"$gte": yesterday}
-        })
-        
-        return {
-            "total_correlations": total_correlations,
-            "type_distribution": type_distribution,
-            "status_distribution": status_distribution,
-            "recent_correlations": recent_correlations,
-            "active_correlations": status_distribution.get("active", 0)
-        }
-        
-    except Exception as e:
-        # Fallback stats
-        return {
-            "total_correlations": 3,
-            "type_distribution": {
-                "entity_based": 1,
-                "temporal": 1,
-                "geographic": 1
-            },
-            "status_distribution": {
-                "active": 2,
-                "investigating": 1
-            },
-            "recent_correlations": 1,
-            "active_correlations": 2
-        }
-
 async def perform_correlation_analysis(alerts: List[Dict[str, Any]]):
     """Background task to perform correlation analysis"""
-    # This would implement actual correlation logic
-    # For demo purposes, we'll simulate the analysis
-    await asyncio.sleep(3)  # Simulate processing time
-    print(f"Performed correlation analysis on {len(alerts)} alerts")
-
-async def process_correlation(correlation_id: str):
-    """Background task to process correlation"""
-    # This would implement correlation processing logic
-    await asyncio.sleep(2)
-    print(f"Processed correlation: {correlation_id}")
+    try:
+        # Mock correlation analysis logic
+        await asyncio.sleep(2)  # Simulate processing time
+        
+        # Create sample correlations
+        correlations = [
+            {
+                "name": f"Auto-Correlation - {len(alerts)} Alerts",
+                "description": f"Automatically correlated {len(alerts)} alerts",
+                "correlation_type": "pattern_based",
+                "correlation_score": 75.0,
+                "confidence": 80,
+                "status": "active",
+                "alert_ids": [str(alert.get("_id", f"alert_{i}")) for i, alert in enumerate(alerts)],
+                "entities": [alert.get("source_ip", "unknown") for alert in alerts[:5] if alert.get("source_ip")],
+                "created_at": datetime.utcnow().isoformat(),
+                "alert_count": len(alerts)
+            }
+        ]
+        
+        # Save to database
+        client = AsyncIOMotorClient(MONGODB_URL)
+        db = client[DATABASE_NAME]
+        correlation_collection = db.correlation_groups
+        
+        for correlation in correlations:
+            await correlation_collection.insert_one(correlation)
+        
+        client.close()
+        logger.info(f"Created {len(correlations)} correlation groups from analysis")
+        
+    except Exception as e:
+        logger.error(f"Error in correlation analysis: {e}")

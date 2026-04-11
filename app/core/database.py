@@ -1,189 +1,195 @@
-from pathlib import Path
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import ConnectionFailure
 from datetime import datetime, timedelta
-from typing import Optional
-
+from typing import Optional, Dict, Any
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.core.file_database import FileDatabase
 
 logger = setup_logging()
 
 class DatabaseManager:
-    """Simple file-based database manager"""
+    """MongoDB database manager for SOC Correlation Engine"""
     
     def __init__(self):
-        self.file_db = FileDatabase()
+        self.client: Optional[AsyncIOMotorClient] = None
+        self.database = None
         self._connected = False
+        self.mongodb_url = getattr(settings, 'MONGODB_URL', 'mongodb://localhost:27017')
+        self.db_name = getattr(settings, 'DATABASE_NAME', 'soc_correlation_engine')
     
     async def connect(self):
-        """Connect to file database"""
+        """Connect to MongoDB"""
         try:
-            self.file_db = FileDatabase()
-            logger.info("Connected to file database successfully")
+            # Create MongoDB client
+            self.client = AsyncIOMotorClient(
+                self.mongodb_url,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                maxPoolSize=10,
+                retryWrites=True
+            )
+            
+            # Test connection
+            await self.client.admin.command('ping')
+            
+            # Get database
+            self.database = self.client[self.db_name]
+            
+            # Create indexes for better performance
+            await self._create_indexes()
+            
+            # Initialize collections with sample data if empty
+            await self._initialize_collections()
+            
+            logger.info(f"Connected to MongoDB at {self.mongodb_url}")
             self._connected = True
+            
+        except ConnectionFailure as e:
+            logger.error(f"MongoDB connection failed: {e}")
+            # Fallback to in-memory or raise exception
+            raise Exception(f"Could not connect to MongoDB: {e}")
         except Exception as e:
-            logger.error(f"Database connection failed: {e}")
-            self.file_db = FileDatabase()
-            self._connected = True
-            logger.info("Using file database")
+            logger.error(f"Database initialization failed: {e}")
+            raise
     
     async def disconnect(self):
-        """Disconnect from database"""
+        """Disconnect from MongoDB"""
         try:
-            # File database doesn't need explicit disconnect
-            logger.info("File database disconnected")
+            if self.client:
+                self.client.close()
+                logger.info("MongoDB disconnected")
         except Exception as e:
             logger.error(f"Error during disconnect: {e}")
-        self._connected = False
+        finally:
+            self._connected = False
     
     def get_database(self):
         """Get database instance"""
         if not self._connected:
             raise RuntimeError("Database not connected")
-        return self.file_db
+        return self.database
+    
+    def get_mongodb_db(self):
+        """Get MongoDB database instance (for compatibility)"""
+        return self.get_database()
     
     async def health_check(self):
         """Check database health"""
         health_status = {
-            "file_database": True,
-            "timestamp": datetime.utcnow().isoformat()
+            "mongodb": self._connected,
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": self.db_name,
+            "collections": {}
         }
+        
+        if self._connected and self.database is not None:
+            try:
+                # Check each collection
+                collections = ['alerts', 'correlation_groups', 'reputation', 'logs']
+                for collection_name in collections:
+                    try:
+                        count = await self.database[collection_name].count_documents({})
+                        health_status["collections"][collection_name] = {
+                            "exists": True,
+                            "count": count
+                        }
+                    except Exception as e:
+                        health_status["collections"][collection_name] = {
+                            "exists": False,
+                            "error": str(e)
+                        }
+            except Exception as e:
+                health_status["collections_error"] = str(e)
+        
         return health_status
     
-    async def cleanup_old_data(self):
-        """Clean up old data based on retention policies"""
+    async def _create_indexes(self):
+        """Create database indexes for better performance"""
         try:
-            # Clean up old alerts (older than 90 days)
-            alerts_collection = self.mongodb_db.alerts
-            cutoff_date = datetime.utcnow() - timedelta(days=90)
-            result = await alerts_collection.delete_many({
-                "timestamp": {"$lt": cutoff_date},
-                "status": {"$in": ["resolved", "false_positive"]}
-            })
-            logger.info(f"Cleaned up {result.deleted_count} old alerts")
+            # Alerts collection indexes
+            await self.database.alerts.create_index([("timestamp", -1)])
+            await self.database.alerts.create_index([("severity", 1)])
+            await self.database.alerts.create_index([("status", 1)])
+            await self.database.alerts.create_index([("category", 1)])
+            await self.database.alerts.create_index([("title", "text"), ("description", "text")])
             
-            # Clean up old reputation data (older than 180 days for benign entities)
-            reputation_collection = self.mongodb_db.reputation
-            cutoff_date = datetime.utcnow() - timedelta(days=180)
-            result = await reputation_collection.delete_many({
-                "expiresAt": {"$lt": cutoff_date}
-            })
-            logger.info(f"Cleaned up {result.deleted_count} old reputation entries")
+            # Correlation groups indexes
+            await self.database.correlation_groups.create_index([("created_at", -1)])
+            await self.database.correlation_groups.create_index([("correlation_type", 1)])
+            await self.database.correlation_groups.create_index([("status", 1)])
+            await self.database.correlation_groups.create_index([("name", "text"), ("description", "text")])
+            
+            # Reputation collection indexes
+            await self.database.reputation.create_index([("entity", 1)])
+            await self.database.reputation.create_index([("entity_type", 1)])
+            await self.database.reputation.create_index([("risk_level", 1)])
+            await self.database.reputation.create_index([("last_checked", -1)])
+            
+            # Logs collection indexes
+            await self.database.logs.create_index([("timestamp", -1)])
+            await self.database.logs.create_index([("level", 1)])
+            await self.database.logs.create_index([("category", 1)])
+            await self.database.logs.create_index([("message", "text")])
+            
+            logger.info("Database indexes created successfully")
             
         except Exception as e:
-            logger.error(f"Error during data cleanup: {e}")
+            logger.warning(f"Failed to create some indexes: {e}")
+    
+    async def _initialize_collections(self):
+        """Initialize collections with basic structure if empty"""
+        try:
+            # Check if database is completely empty
+            collections = await self.database.list_collection_names()
+            
+            if not collections:
+                logger.info("Database is empty, creating initial collections")
+                
+                # Create empty collections
+                await self.database.create_collection("alerts")
+                await self.database.create_collection("correlation_groups")
+                await self.database.create_collection("reputation")
+                await self.database.create_collection("logs")
+                
+                logger.info("Initial collections created")
+            
+        except Exception as e:
+            logger.warning(f"Failed to initialize collections: {e}")
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get database statistics"""
+        if not self._connected or self.database is None:
+            return {"error": "Database not connected"}
+        
+        try:
+            stats = {
+                "database": self.db_name,
+                "collections": {},
+                "total_documents": 0
+            }
+            
+            collections = await self.database.list_collection_names()
+            for collection_name in collections:
+                count = await self.database[collection_name].count_documents({})
+                stats["collections"][collection_name] = count
+                stats["total_documents"] += count
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Failed to get database stats: {e}")
+            return {"error": str(e)}
 
-# Global database manager instance
+# Singleton instance
 db_manager = DatabaseManager()
 
+async def get_db():
+    """Dependency function to get database instance"""
+    if not db_manager._connected:
+        raise RuntimeError("Database not connected")
+    return db_manager
+
 async def init_db():
-    """Initialize database connections"""
+    """Initialize database connection"""
     await db_manager.connect()
     return db_manager
-
-async def get_db():
-    """Get database dependency for FastAPI"""
-    return db_manager
-
-async def close_db():
-    """Close database connections"""
-    await db_manager.disconnect()
-
-# Mock classes for demo without database
-class MockDatabase:
-    """Mock database for demo purposes"""
-    
-    def __init__(self):
-        self.collections = {
-            'alerts': MockCollection(),
-            'reputation': MockCollection(),
-            'correlation_groups': MockCollection()
-        }
-    
-    def __getattr__(self, name):
-        if name in self.collections:
-            return self.collections[name]
-        return MockCollection()
-
-class MockCollection:
-    """Mock MongoDB collection for demo purposes"""
-    
-    def __init__(self):
-        self.data = []
-    
-    async def find(self, query=None):
-        return MockCursor(self.data)
-    
-    async def find_one(self, query=None):
-        return self.data[0] if self.data else None
-    
-    async def insert_one(self, document):
-        document['_id'] = f"mock_{len(self.data)}"
-        self.data.append(document)
-        return MockInsertResult()
-    
-    async def update_one(self, query, update):
-        return MockUpdateResult()
-    
-    async def delete_one(self, query):
-        return MockDeleteResult()
-    
-    async def count_documents(self, query=None):
-        return len(self.data)
-    
-    async def aggregate(self, pipeline):
-        return []
-    
-    def create_index(self, *args, **kwargs):
-        pass
-
-class MockCursor:
-    """Mock cursor for database queries"""
-    
-    def __init__(self, data):
-        self.data = data
-    
-    def sort(self, *args):
-        return self
-    
-    def skip(self, count):
-        return MockCursor(self.data[count:])
-    
-    def limit(self, count):
-        return MockCursor(self.data[:count])
-    
-    async def to_list(self, length=None):
-        return self.data[:length] if length else self.data
-
-class MockInsertResult:
-    """Mock insert result"""
-    def __init__(self):
-        self.inserted_id = f"mock_id_{hash('insert')}"
-
-class MockUpdateResult:
-    """Mock update result"""
-    def __init__(self):
-        self.modified_count = 1
-
-class MockDeleteResult:
-    """Mock delete result"""
-    def __init__(self):
-        self.deleted_count = 1
-
-class MockRedis:
-    """Mock Redis client for demo purposes"""
-    
-    async def ping(self):
-        return True
-    
-    async def get(self, key):
-        return None
-    
-    async def set(self, key, value, ex=None):
-        return True
-    
-    async def delete(self, key):
-        return True
-    
-    async def close(self):
-        pass

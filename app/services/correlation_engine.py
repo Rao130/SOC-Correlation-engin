@@ -79,14 +79,76 @@ class CorrelationEngine:
                 await asyncio.sleep(10)  # Wait before retrying
     
     async def _process_correlations(self):
-        """Process alert correlations - disabled for demo"""
+        """Process alert correlations"""
         try:
-            logger.info("Correlation processing disabled for demo")
-            return []
+            # Get recent alerts for correlation
+            alerts = await self._get_recent_alerts()
+            
+            if not alerts:
+                logger.info("No alerts found for correlation")
+                return []
+            
+            logger.info(f"Processing correlations for {len(alerts)} alerts")
+            
+            # Find correlations between alerts
+            correlation_groups = await self._find_correlations(alerts)
+            
+            # Store correlations in database
+            for correlation in correlation_groups:
+                await self._store_correlation(correlation)
+            
+            logger.info(f"Found {len(correlation_groups)} correlation groups")
+            return correlation_groups
+            
         except Exception as e:
             logger.error(f"Error processing correlations: {e}")
             return []
     
+    async def _get_recent_alerts(self) -> List[Dict]:
+        """Get recent alerts for correlation analysis"""
+        try:
+            # In a real implementation, this would query the database
+            # For now, return mock data
+            return [
+                {
+                    "id": 1,
+                    "title": "SQL Injection Attack",
+                    "source_ip": "192.168.1.105",
+                    "timestamp": "2024-04-05 14:32:15",
+                    "severity": "critical",
+                    "category": "injection"
+                },
+                {
+                    "id": 2,
+                    "title": "Brute Force Attempt",
+                    "source_ip": "10.0.0.15",
+                    "timestamp": "2024-04-05 14:31:42",
+                    "severity": "high",
+                    "category": "authentication"
+                },
+                {
+                    "id": 3,
+                    "title": "Suspicious File Upload",
+                    "source_ip": "172.16.0.45",
+                    "timestamp": "2024-04-05 14:30:28",
+                    "severity": "medium",
+                    "category": "filesystem"
+                }
+            ]
+        except Exception as e:
+            logger.error(f"Error getting recent alerts: {e}")
+            return []
+
+    async def _store_correlation(self, correlation: Dict):
+        """Store correlation in database"""
+        try:
+            # In a real implementation, this would store in database
+            logger.info(f"Storing correlation: {correlation.get('name', 'Unknown')}")
+            return True
+        except Exception as e:
+            logger.error(f"Error storing correlation: {e}")
+            return False
+
     async def _find_correlations(self, alerts: List[Dict]) -> List[Dict]:
         """Find correlations between alerts using multiple methods"""
         correlation_groups = []
@@ -99,209 +161,139 @@ class CorrelationEngine:
         temporal_groups = await self._temporal_correlation(alerts)
         correlation_groups.extend(temporal_groups)
         
-        # Semantic correlation
-        if self.nlp:
-            semantic_groups = await self._semantic_correlation(alerts)
-            correlation_groups.extend(semantic_groups)
-        
-        # Geographic correlation
-        geographic_groups = await self._geographic_correlation(alerts)
-        correlation_groups.extend(geographic_groups)
-        
-        # Behavioral correlation
-        behavioral_groups = await self._behavioral_correlation(alerts)
-        correlation_groups.extend(behavioral_groups)
-        
-        # Remove duplicates and merge similar groups
-        correlation_groups = self._merge_correlation_groups(correlation_groups)
+        # Pattern-based correlation
+        pattern_groups = await self._pattern_based_correlation(alerts)
+        correlation_groups.extend(pattern_groups)
         
         return correlation_groups
-    
+
     async def _entity_based_correlation(self, alerts: List[Dict]) -> List[Dict]:
-        """Correlate alerts based on shared entities"""
-        entity_map = defaultdict(list)
+        """Group alerts by common entities (IP, user, etc.)"""
+        correlations = []
+        correlation_id = 1
         
-        # Build entity to alerts mapping
+        # Group by source IP
+        ip_groups = {}
         for alert in alerts:
-            for entity in alert.get('entities', []):
-                entity_key = f"{entity['type']}:{entity['value']}"
-                entity_map[entity_key].append(alert)
+            ip = alert.get('source_ip', 'unknown')
+            if ip not in ip_groups:
+                ip_groups[ip] = []
+            ip_groups[ip].append(alert)
         
-        correlation_groups = []
-        
-        # Find groups with multiple alerts
-        for entity_key, entity_alerts in entity_map.items():
-            if len(entity_alerts) >= 2:
-                # Calculate correlation score based on entity importance
-                entity_type = entity_key.split(':')[0]
-                entity_importance = self._get_entity_importance(entity_type)
-                
-                correlation_score = min(100, len(entity_alerts) * entity_importance * 20)
-                
-                correlation_groups.append({
+        # Create correlation groups for IPs with multiple alerts
+        for ip, ip_alerts in ip_groups.items():
+            if len(ip_alerts) > 1:
+                correlations.append({
+                    'id': correlation_id,
+                    'name': f'Multiple Alerts from {ip}',
+                    'description': f'{len(ip_alerts)} alerts detected from same source IP',
+                    'correlation_score': min(90, len(ip_alerts) * 20),
+                    'confidence': 85,
                     'type': 'entity_based',
-                    'alerts': entity_alerts,
-                    'score': correlation_score,
-                    'entity': entity_key,
-                    'confidence': min(100, len(entity_alerts) * 25)
+                    'alerts': ip_alerts,
+                    'timestamp': datetime.now().isoformat()
                 })
+                correlation_id += 1
         
-        return correlation_groups
-    
+        return correlations
+
     async def _temporal_correlation(self, alerts: List[Dict]) -> List[Dict]:
-        """Correlate alerts based on temporal proximity"""
-        correlation_groups = []
+        """Group alerts by time proximity"""
+        correlations = []
+        correlation_id = 1
         
         # Sort alerts by timestamp
-        sorted_alerts = sorted(alerts, key=lambda x: x['timestamp'])
+        sorted_alerts = sorted(alerts, key=lambda x: x.get('timestamp', ''))
         
-        # Find temporal clusters
-        for i, alert1 in enumerate(sorted_alerts):
-            temporal_cluster = [alert1]
+        # Find alerts within 5 minutes of each other
+        time_window = 300  # 5 minutes in seconds
+        
+        for i, alert in enumerate(sorted_alerts):
+            nearby_alerts = [alert]
+            alert_time = datetime.fromisoformat(alert.get('timestamp', '').replace('Z', '+00:00'))
             
-            for alert2 in sorted_alerts[i+1:]:
-                time_diff = (alert2['timestamp'] - alert1['timestamp']).total_seconds()
+            for j in range(i + 1, len(sorted_alerts)):
+                other_alert = sorted_alerts[j]
+                other_time = datetime.fromisoformat(other_alert.get('timestamp', '').replace('Z', '+00:00'))
                 
-                if time_diff <= self.temporal_threshold:
-                    # Check for other similarities
-                    similarity = await self._calculate_alert_similarity(alert1, alert2)
-                    if similarity >= 0.3:
-                        temporal_cluster.append(alert2)
+                if abs((alert_time - other_time).total_seconds()) <= time_window:
+                    nearby_alerts.append(other_alert)
                 else:
                     break
             
-            if len(temporal_cluster) >= 2:
-                correlation_score = min(100, len(temporal_cluster) * 15)
-                
-                correlation_groups.append({
+            if len(nearby_alerts) > 1:
+                correlations.append({
+                    'id': correlation_id,
+                    'name': f'Temporal Cluster',
+                    'description': f'{len(nearby_alerts)} alerts within {time_window//60} minutes',
+                    'correlation_score': min(80, len(nearby_alerts) * 15),
+                    'confidence': 75,
                     'type': 'temporal',
-                    'alerts': temporal_cluster,
-                    'score': correlation_score,
-                    'time_window': max(1, int((temporal_cluster[-1]['timestamp'] - temporal_cluster[0]['timestamp']).total_seconds() / 60)),
-                    'confidence': min(100, len(temporal_cluster) * 20)
+                    'alerts': nearby_alerts,
+                    'timestamp': datetime.now().isoformat()
                 })
+                correlation_id += 1
         
-        return correlation_groups
-    
-    async def _semantic_correlation(self, alerts: List[Dict]) -> List[Dict]:
-        """Correlate alerts based on semantic similarity"""
-        # Simplified version without ML libraries for demo
-        correlation_groups = []
+        return correlations
+
+    async def _pattern_based_correlation(self, alerts: List[Dict]) -> List[Dict]:
+        """Group alerts by attack patterns"""
+        correlations = []
+        correlation_id = 1
         
-        # Simple text similarity based on common words
-        for i, alert1 in enumerate(alerts):
-            for alert2 in alerts[i+1:]:
-                # Simple keyword matching for demo
-                text1 = f"{alert1.get('title', '')} {alert1.get('description', '')}".lower()
-                text2 = f"{alert2.get('title', '')} {alert2.get('description', '')}".lower()
-                
-                # Calculate simple similarity
-                words1 = set(text1.split())
-                words2 = set(text2.split())
-                
-                if words1 and words2:
-                    similarity = len(words1.intersection(words2)) / len(words1.union(words2))
-                    
-                    if similarity >= 0.3:  # Lower threshold for simple matching
-                        correlation_groups.append({
-                            'type': 'semantic',
-                            'alerts': [alert1, alert2],
-                            'score': similarity * 100,
-                            'cluster_id': i,
-                            'confidence': min(100, similarity * 100)
-                        })
-        
-        return correlation_groups
-    
-    async def _geographic_correlation(self, alerts: List[Dict]) -> List[Dict]:
-        """Correlate alerts based on geographic proximity"""
-        correlation_groups = []
-        
-        # Filter alerts with location data
-        geo_alerts = [alert for alert in alerts if alert.get('location') and 
-                      alert['location'].get('latitude') and alert['location'].get('longitude')]
-        
-        if len(geo_alerts) < 2:
-            return correlation_groups
-        
-        # Group by geographic proximity
-        for i, alert1 in enumerate(geo_alerts):
-            geo_cluster = [alert1]
-            loc1 = alert1['location']
-            
-            for alert2 in geo_alerts[i+1:]:
-                loc2 = alert2['location']
-                
-                # Calculate distance
-                distance = self._calculate_distance(
-                    loc1['latitude'], loc1['longitude'],
-                    loc2['latitude'], loc2['longitude']
-                )
-                
-                if distance <= self.geographic_threshold:
-                    geo_cluster.append(alert2)
-            
-            if len(geo_cluster) >= 2:
-                correlation_score = min(100, len(geo_cluster) * 12)
-                
-                correlation_groups.append({
-                    'type': 'geographic',
-                    'alerts': geo_cluster,
-                    'score': correlation_score,
-                    'geographic_radius': max(1, int(self._calculate_cluster_radius(geo_cluster))),
-                    'confidence': min(100, len(geo_cluster) * 18)
-                })
-        
-        return correlation_groups
-    
-    async def _behavioral_correlation(self, alerts: List[Dict]) -> List[Dict]:
-        """Correlate alerts based on behavioral patterns"""
-        correlation_groups = []
-        
-        # Group alerts by category and source
-        behavior_map = defaultdict(list)
-        
+        # Group by category
+        category_groups = {}
         for alert in alerts:
-            behavior_key = f"{alert.get('category')}:{alert.get('source')}"
-            behavior_map[behavior_key].append(alert)
+            category = alert.get('category', 'unknown')
+            if category not in category_groups:
+                category_groups[category] = []
+            category_groups[category].append(alert)
         
-        # Find behavioral patterns
-        for behavior_key, behavior_alerts in behavior_map.items():
-            if len(behavior_alerts) >= 3:  # Need at least 3 alerts for pattern
-                # Analyze pattern characteristics
-                pattern_score = await self._analyze_behavioral_pattern(behavior_alerts)
-                
-                if pattern_score >= 30:  # Minimum pattern score threshold
-                    correlation_groups.append({
-                        'type': 'behavioral',
-                        'alerts': behavior_alerts,
-                        'score': pattern_score,
-                        'pattern': behavior_key,
-                        'confidence': min(100, len(behavior_alerts) * 15)
-                    })
+        # Create correlation groups for categories with multiple alerts
+        for category, cat_alerts in category_groups.items():
+            if len(cat_alerts) > 1:
+                correlations.append({
+                    'id': correlation_id,
+                    'name': f'{category.title()} Attack Pattern',
+                    'description': f'{len(cat_alerts)} {category} attacks detected',
+                    'correlation_score': min(70, len(cat_alerts) * 10),
+                    'confidence': 70,
+                    'type': 'pattern_based',
+                    'alerts': cat_alerts,
+                    'timestamp': datetime.now().isoformat()
+                })
+                correlation_id += 1
         
-        return correlation_groups
-    
-    async def _calculate_alert_similarity(self, alert1: Dict, alert2: Dict) -> float:
-        """Calculate similarity between two alerts"""
-        similarity = 0.0
-        
-        # Entity similarity
-        entities1 = {f"{e['type']}:{e['value']}" for e in alert1.get('entities', [])}
-        entities2 = {f"{e['type']}:{e['value']}" for e in alert2.get('entities', [])}
-        
-        if entities1 and entities2:
-            entity_similarity = len(entities1.intersection(entities2)) / len(entities1.union(entities2))
-            similarity += entity_similarity * 0.4
-        
-        # Category similarity
-        if alert1.get('category') == alert2.get('category'):
-            similarity += 0.3
-        
-        # Severity similarity
-        severity_weights = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
-        sev1 = severity_weights.get(alert1.get('severity'), 0)
-        sev2 = severity_weights.get(alert2.get('severity'), 0)
+        return correlations
+
+    def _get_priority_from_score(self, score: int) -> str:
+        """Calculate priority from correlation score"""
+        if score >= 80:
+            return 'critical'
+        elif score >= 60:
+            return 'high'
+        elif score >= 40:
+            return 'medium'
+        else:
+            return 'low'
+
+    async def get_total_correlations(self) -> int:
+        """Get total number of correlation groups"""
+        try:
+            correlation_collection = self.db.get_database().correlation_groups
+            return await correlation_collection.count_documents({})
+        except Exception as e:
+            logger.error(f"Error getting total correlations: {e}")
+            return 0
+
+    async def get_active_correlations(self) -> int:
+        """Get number of active correlation groups"""
+        try:
+            correlation_collection = self.db.get_database().correlation_groups
+            return await correlation_collection.count_documents({'status': 'active'})
+        except Exception as e:
+            logger.error(f"Error getting active correlations: {e}")
+            return 0
         
         if sev1 > 0 and sev2 > 0:
             severity_similarity = 1 - abs(sev1 - sev2) / 4

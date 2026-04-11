@@ -63,9 +63,7 @@ class LogFilter(BaseModel):
 
 class LogStats(BaseModel):
     total_logs: int
-    logs_by_level: Dict[str, int]
-    logs_by_category: Dict[str, int]
-    recent_errors: int
-    critical_alerts: int
-    avg_response_time: Optional[float] = None
-    top_error_codes: Dict[str, int]
+    level_counts: Dict[str, int]
+    top_sources: list
+    error_rate: float
+    warning_rate: float

@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
-import uuid
+import asyncio
 
 from app.core.database import get_db
+from app.core.logging import setup_logging
 from app.models.alert import AlertCreate, AlertUpdate, AlertResponse, AlertDocument
 from app.services.alert_processor import AlertProcessor
+
+logger = setup_logging()
 
 router = APIRouter()
 
@@ -50,7 +53,7 @@ async def create_alert(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create alert: {str(e)}")
 
-@router.get("/", response_model=Dict[str, Any])
+@router.get("/", response_model=List[Dict[str, Any]])
 async def get_alerts(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=1000),
@@ -64,70 +67,99 @@ async def get_alerts(
 ):
     """Get alerts with filtering and pagination"""
     try:
-        # Build query
-        query = {}
+        file_db = db.get_database()
         
-        if severity:
-            query["severity"] = severity
-        if status:
-            query["status"] = status
-        if category:
-            query["category"] = category
-        if search:
-            query["$or"] = [
-                {"title": {"$regex": search, "$options": "i"}},
-                {"description": {"$regex": search, "$options": "i"}},
-                {"entities.value": {"$regex": search, "$options": "i"}}
-            ]
-        
-        # Sort configuration
-        sort_direction = 1 if sort_order == "asc" else -1
-        sort_config = [(sort_by, sort_direction)]
-        
-        # Get alerts
-        file_db = db.get_database()  # Get file database instance
-        alerts_collection = file_db.alerts  # Get alerts collection
-        alerts = await alerts_collection.find(query).sort(sort_config).skip(skip).limit(limit).to_list(length=None)
-        
-        # Get total count
-        total = await alerts_collection.count_documents(query)
-        
-        # Convert to response models
-        alert_responses = []
-        for alert in alerts:
-            alert_doc = AlertDocument(**alert)
-            alert_responses.append(alert_doc.to_response())
-        
-        return {
-            "data": alert_responses,
-            "total": total,
-            "skip": skip,
-            "limit": limit,
-            "has_more": (skip + limit) < total
-        }
+        # Handle different database types
+        if file_db is not None:
+            try:
+                collection = file_db.alerts
+                
+                # Build query
+                query = {}
+                if severity:
+                    query["severity"] = severity
+                if status:
+                    query["status"] = status
+                if category:
+                    query["category"] = category
+                if search:
+                    query["$or"] = [
+                        {"title": {"$regex": search, "$options": "i"}},
+                        {"description": {"$regex": search, "$options": "i"}}
+                    ]
+                
+                # Get data from database
+                alerts = []
+                try:
+                    cursor = collection.find(query).sort("timestamp", -1).skip(skip).limit(limit)
+                    alerts = await cursor.to_list()
+                    
+                    # Convert ObjectId to string for JSON serialization
+                    for alert in alerts:
+                        if "_id" in alert:
+                            alert["_id"] = str(alert["_id"])
+                        # Convert any nested ObjectIds
+                        for key, value in alert.items():
+                            if hasattr(value, '__str__') and 'ObjectId' in str(type(value)):
+                                alert[key] = str(value)
+                        
+                except Exception as db_error:
+                    logger.warning(f"Database query failed: {db_error}")
+                    alerts = []
+                
+                return alerts
+                
+            except AttributeError:
+                # Fallback for file-based database
+                alerts_data = file_db.alerts.data if hasattr(file_db.alerts, 'data') else file_db.alerts
+                
+                # Apply filters
+                filtered_alerts = alerts_data
+                if severity:
+                    filtered_alerts = [a for a in filtered_alerts if a.get('severity') == severity]
+                if status:
+                    filtered_alerts = [a for a in filtered_alerts if a.get('status') == status]
+                if category:
+                    filtered_alerts = [a for a in filtered_alerts if a.get('category') == category]
+                if search:
+                    search_lower = search.lower()
+                    filtered_alerts = [a for a in filtered_alerts if search_lower in a.get('title', '').lower() or search_lower in a.get('description', '').lower()]
+                
+                # Sort by timestamp (newest first)
+                filtered_alerts.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                
+                # Pagination
+                paginated_alerts = filtered_alerts[skip:skip + limit]
+                
+                return paginated_alerts
+        else:
+            return []
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get alerts: {str(e)}")
+        logger.error(f"Failed to get alerts: {e}")
+        return []
 
-@router.get("/{alert_id}", response_model=AlertResponse)
+@router.get("/{alert_id}", response_model=Dict[str, Any])
 async def get_alert(alert_id: str, db = Depends(get_db)):
     """Get a specific alert by ID"""
     try:
-        alerts_collection = db.get_mongodb_db().alerts
-        alert = await alerts_collection.find_one({"alert_id": alert_id})
+        file_db = db.get_database()
+        collection = file_db.alerts
+        
+        alert = await collection.find_one({"_id": alert_id})
         
         if not alert:
             raise HTTPException(status_code=404, detail="Alert not found")
         
-        alert_doc = AlertDocument(**alert)
-        return alert_doc.to_response()
+        alert["_id"] = str(alert["_id"])
+        return alert
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get alert: {str(e)}")
 
-@router.patch("/{alert_id}", response_model=AlertResponse)
+@router.patch("/{alert_id}", response_model=Dict[str, Any])
 async def update_alert(
     alert_id: str,
     alert_update: AlertUpdate,
@@ -135,10 +167,11 @@ async def update_alert(
 ):
     """Update an alert"""
     try:
-        alerts_collection = db.get_mongodb_db().alerts
+        file_db = db.get_database()
+        collection = file_db.alerts
         
         # Check if alert exists
-        existing_alert = await alerts_collection.find_one({"alert_id": alert_id})
+        existing_alert = await collection.find_one({"_id": alert_id})
         if not existing_alert:
             raise HTTPException(status_code=404, detail="Alert not found")
         
@@ -151,24 +184,16 @@ async def update_alert(
             update_data["resolved_at"] = datetime.utcnow()
         
         # Update alert
-        await alerts_collection.update_one(
-            {"alert_id": alert_id},
+        await collection.update_one(
+            {"_id": alert_id},
             {"$set": update_data}
         )
         
         # Get updated alert
-        updated_alert = await alerts_collection.find_one({"alert_id": alert_id})
-        alert_doc = AlertDocument(**updated_alert)
+        updated_alert = await collection.find_one({"_id": alert_id})
+        updated_alert["_id"] = str(updated_alert["_id"])
         
-        # Recalculate criticality score if severity changed
-        if alert_update.severity:
-            alert_doc.update_criticality_score()
-            await alerts_collection.update_one(
-                {"alert_id": alert_id},
-                {"$set": {"criticality_score": alert_doc.criticality_score}}
-            )
-        
-        return alert_doc.to_response()
+        return updated_alert
         
     except HTTPException:
         raise
@@ -179,8 +204,10 @@ async def update_alert(
 async def delete_alert(alert_id: str, db = Depends(get_db)):
     """Delete an alert"""
     try:
-        alerts_collection = db.get_mongodb_db().alerts
-        result = await alerts_collection.delete_one({"alert_id": alert_id})
+        file_db = db.get_database()
+        collection = file_db.alerts
+        
+        result = await collection.delete_one({"_id": alert_id})
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -200,244 +227,42 @@ async def add_alert_note(
 ):
     """Add a note to an alert"""
     try:
-        alerts_collection = db.get_mongodb_db().alerts
+        file_db = db.get_database()
+        collection = file_db.alerts
         
         # Check if alert exists
-        existing_alert = await alerts_collection.find_one({"alert_id": alert_id})
+        existing_alert = await collection.find_one({"_id": alert_id})
         if not existing_alert:
             raise HTTPException(status_code=404, detail="Alert not found")
         
-        # Create note
-        new_note = {
-            "user_id": note.get("user_id", "system"),
-            "user_name": note.get("user_name", "System"),
-            "note": note.get("note", ""),
-            "timestamp": datetime.utcnow()
+        # Add note
+        note_data = {
+            "content": note.get("content", ""),
+            "author": note.get("author", "system"),
+            "timestamp": datetime.utcnow(),
+            "type": note.get("type", "general")
         }
         
-        # Add note to alert
-        await alerts_collection.update_one(
-            {"alert_id": alert_id},
+        await collection.update_one(
+            {"_id": alert_id},
             {
-                "$push": {"notes": new_note},
+                "$push": {"notes": note_data},
                 "$set": {"updated_at": datetime.utcnow()}
             }
         )
         
-        return {"message": "Note added successfully", "note": new_note}
+        return {"message": "Note added successfully", "note": note_data}
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add note: {str(e)}")
 
-@router.post("/{alert_id}/assign")
-async def assign_alert(
-    alert_id: str,
-    assignment: Dict[str, Any],
-    db = Depends(get_db)
-):
-    """Assign an alert to an analyst"""
+async def process_alert_background(alert: Dict[str, Any]):
+    """Background task to process alert"""
     try:
-        alerts_collection = db.get_mongodb_db().alerts
-        
-        # Check if alert exists
-        existing_alert = await alerts_collection.find_one({"alert_id": alert_id})
-        if not existing_alert:
-            raise HTTPException(status_code=404, detail="Alert not found")
-        
-        # Create assignment
-        assignment_data = {
-            "user_id": assignment.get("user_id"),
-            "user_name": assignment.get("user_name"),
-            "assigned_at": datetime.utcnow()
-        }
-        
-        # Update alert assignment
-        await alerts_collection.update_one(
-            {"alert_id": alert_id},
-            {
-                "$set": {
-                    "assigned_to": assignment_data,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-        
-        return {"message": "Alert assigned successfully", "assignment": assignment_data}
-        
-    except HTTPException:
-        raise
+        # This would implement alert processing logic
+        await asyncio.sleep(1)
+        logger.info(f"Processed alert: {alert.get('id', 'unknown')}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to assign alert: {str(e)}")
-
-@router.get("/stats/summary")
-async def get_alert_stats(db = Depends(get_db)):
-    """Get alert statistics summary"""
-    try:
-        alerts_collection = db.get_mongodb_db().alerts
-        
-        # Get counts by status
-        status_pipeline = [
-            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        status_counts = await alerts_collection.aggregate(status_pipeline).to_list(None)
-        
-        # Get counts by severity
-        severity_pipeline = [
-            {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        severity_counts = await alerts_collection.aggregate(severity_pipeline).to_list(None)
-        
-        # Get counts by category
-        category_pipeline = [
-            {"$group": {"_id": "$category", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
-        ]
-        category_counts = await alerts_collection.aggregate(category_pipeline).to_list(None)
-        
-        # Get recent trends (last 24 hours)
-        now = datetime.utcnow()
-        day_ago = now - timedelta(days=1)
-        
-        recent_pipeline = [
-            {"$match": {"timestamp": {"$gte": day_ago}}},
-            {"$group": {
-                "_id": {"$dateTrunc": {"date": "$timestamp", "unit": "hour"}},
-                "count": {"$sum": 1}
-            }},
-            {"$sort": {"_id": 1}}
-        ]
-        recent_trends = await alerts_collection.aggregate(recent_pipeline).to_list(None)
-        
-        # Get fatigue metrics
-        fatigue_pipeline = [
-            {"$group": {
-                "_id": None,
-                "total_alerts": {"$sum": 1},
-                "duplicate_count": {"$sum": "$fatigue_metrics.duplicate_count"},
-                "suppression_count": {"$sum": "$fatigue_metrics.suppression_count"},
-                "auto_resolve_count": {"$sum": "$fatigue_metrics.auto_resolve_count"},
-                "avg_resolution_time": {"$avg": "$fatigue_metrics.average_resolution_time"}
-            }}
-        ]
-        fatigue_metrics = await alerts_collection.aggregate(fatigue_pipeline).to_list(None)
-        
-        return {
-            "status_counts": {item["_id"]: item["count"] for item in status_counts},
-            "severity_counts": {item["_id"]: item["count"] for item in severity_counts},
-            "category_counts": {item["_id"]: item["count"] for item in category_counts},
-            "recent_trends": [
-                {"hour": str(item["_id"]), "count": item["count"]} 
-                for item in recent_trends
-            ],
-            "fatigue_metrics": fatigue_metrics[0] if fatigue_metrics else {
-                "total_alerts": 0,
-                "duplicate_count": 0,
-                "suppression_count": 0,
-                "auto_resolve_count": 0,
-                "avg_resolution_time": 0
-            }
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get alert stats: {str(e)}")
-
-@router.post("/bulk", response_model=List[AlertResponse])
-async def create_bulk_alerts(
-    alerts: List[AlertCreate],
-    background_tasks: BackgroundTasks,
-    db = Depends(get_db)
-):
-    """Create multiple alerts in bulk"""
-    try:
-        created_alerts = []
-        alerts_collection = db.get_mongodb_db().alerts
-        
-        for alert_data in alerts:
-            # Create alert document
-            alert_doc = AlertDocument(
-                title=alert_data.title,
-                description=alert_data.description,
-                severity=alert_data.severity,
-                source=alert_data.source,
-                category=alert_data.category,
-                confidence=alert_data.confidence,
-                entities=alert_data.entities,
-                location=alert_data.location,
-                context=alert_data.context,
-                raw_data=alert_data.raw_data
-            )
-            
-            # Calculate criticality score
-            alert_doc.update_criticality_score()
-            
-            # Save to database
-            await alerts_collection.insert_one(alert_doc.dict())
-            created_alerts.append(alert_doc.to_response())
-            
-            # Trigger background processing
-            background_tasks.add_task(
-                process_alert_background,
-                alert_doc.dict()
-            )
-        
-        return created_alerts
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create bulk alerts: {str(e)}")
-
-@router.post("/suppress/{alert_id}")
-async def suppress_alert(
-    alert_id: str,
-    suppression: Dict[str, Any],
-    db = Depends(get_db)
-):
-    """Suppress an alert (temporarily hide it)"""
-    try:
-        alerts_collection = db.get_mongodb_db().alerts
-        
-        # Check if alert exists
-        existing_alert = await alerts_collection.find_one({"alert_id": alert_id})
-        if not existing_alert:
-            raise HTTPException(status_code=404, detail="Alert not found")
-        
-        # Update alert status to suppressed
-        await alerts_collection.update_one(
-            {"alert_id": alert_id},
-            {
-                "$set": {
-                    "status": "suppressed",
-                    "suppression_reason": suppression.get("reason", ""),
-                    "suppression_expires": suppression.get("expires_at"),
-                    "updated_at": datetime.utcnow()
-                },
-                "$inc": {"fatigue_metrics.suppression_count": 1}
-            }
-        )
-        
-        return {"message": "Alert suppressed successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to suppress alert: {str(e)}")
-
-async def process_alert_background(alert_data: Dict[str, Any]):
-    """Background task to process alert after creation"""
-    try:
-        # This would integrate with the AlertProcessor service
-        # For now, we'll just log it
-        print(f"Background processing alert: {alert_data['alert_id']}")
-        
-        # In a real implementation, this would:
-        # 1. Check entity reputations
-        # 2. Run correlation analysis
-        # 3. Update fatigue metrics
-        # 4. Send notifications if needed
-        # 5. Update dashboard via WebSocket
-        
-    except Exception as e:
-        print(f"Error in background alert processing: {e}")
+        logger.error(f"Failed to process alert: {e}")

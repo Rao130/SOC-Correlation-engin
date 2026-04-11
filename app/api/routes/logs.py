@@ -16,6 +16,11 @@ def get_log_service():
     global log_service
     return log_service
 
+def initialize_log_service(service):
+    """Initialize log service instance"""
+    global log_service
+    log_service = service
+
 @router.get("/", response_model=List[LogEntry])
 async def get_logs(
     level: Optional[LogLevel] = Query(None),
@@ -52,11 +57,11 @@ async def get_logs(
         )
         
         logs = await log_service.get_logs(log_filter, skip=skip, limit=limit)
-        return logs
+        return [log.dict() for log in logs]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get logs: {str(e)}")
 
-@router.get("/stats", response_model=LogStats)
+@router.get("/stats")
 async def get_log_stats(
     hours: int = Query(24, ge=1, le=168),
     log_service: LogService = Depends(get_log_service)
@@ -240,47 +245,8 @@ async def get_log_timeline(
 ):
     """Get log timeline data for charts"""
     try:
-        if log_service.database_manager:
-            db = log_service.database_manager.get_database()
-            collection = db.logs  # Get the logs collection
-            start_time = datetime.utcnow() - timedelta(hours=hours)
-            
-            # Hourly timeline
-            pipeline = [
-                {"$match": {"timestamp": {"$gte": start_time}}},
-                {"$group": {
-                    "_id": {
-                        "year": {"$year": "$timestamp"},
-                        "month": {"$month": "$timestamp"},
-                        "day": {"$dayOfMonth": "$timestamp"},
-                        "hour": {"$hour": "$timestamp"}
-                    },
-                    "count": {"$sum": 1},
-                    "errors": {"$sum": {"$cond": [{"$in": ["$level", ["ERROR", "CRITICAL"]]}, 1, 0]}}
-                }},
-                {"$sort": {"_id": 1}}
-            ]
-            
-            results = await collection.aggregate(pipeline).to_list()
-            
-            timeline = []
-            for r in results:
-                hour_key = r["_id"]
-                timestamp = datetime(
-                    hour_key["year"],
-                    hour_key["month"],
-                    hour_key["day"],
-                    hour_key["hour"]
-                )
-                timeline.append({
-                    "timestamp": timestamp.isoformat(),
-                    "total": r["count"],
-                    "errors": r["errors"]
-                })
-            
-            return {"timeline": timeline}
-        
-        return {"timeline": []}
+        timeline_data = await log_service.get_log_timeline(hours=hours)
+        return {"timeline": timeline_data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get timeline: {str(e)}")
 
