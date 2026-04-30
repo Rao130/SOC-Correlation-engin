@@ -7,18 +7,53 @@ import json
 from urllib.parse import urlparse
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.utils.logger import setup_logging
+from app.core.database import db_manager
+from app.core.logging import logger
 
-logger = setup_logging()
+class ThreatType:
+    MALWARE = "malware"
+    PHISHING = "phishing"
+    RANSOMWARE = "ransomware"
+    DDOS = "ddos"
+    SQL_INJECTION = "sql_injection"
+    XSS = "xss"
+    BRUTE_FORCE = "brute_force"
+
+class ThreatSeverity:
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+class RecordedFutureConnector:
+    """Future threat connector class"""
+    def __init__(self, name: str, enabled: bool = True):
+        self.name = name
+        self.enabled = enabled
+        self.last_sync = None
+
+class MandiantConnector:
+    """Mandiant Threat Intelligence Connector"""
+    def __init__(self, enabled: bool = True):
+        self.name = "Mandiant"
+        self.enabled = enabled
+        self.last_sync = None
+
+class ThreatIntelProvider:
+    """Threat Intelligence Provider Base Class"""
+    
+    def __init__(self):
+        self.name = "Generic Provider"
+        self.enabled = True
 
 class ThreatIntelligence:
     """Advanced Threat Intelligence Integration Service"""
     
     def __init__(self):
-        self.db = get_db()
+        self.db = db_manager
         self.intelligence_sources = {}
         self.cache = {}
+        self.connectors = {}  # For backward compatibility
         self._initialize_sources()
     
     def _initialize_sources(self):
@@ -383,6 +418,10 @@ class ThreatIntelligence:
                 total_weight += weight
             
             return weighted_sum / total_weight if total_weight > 0 else 0.0
+        
+        except Exception as e:
+            logger.error(f"Error calculating overall score: {e}")
+            return 0.0
     
     async def get_ioc_feeds(self) -> List[Dict[str, Any]]:
         """Get IOC feeds from various sources"""
@@ -497,3 +536,196 @@ class ThreatIntelligence:
             
         except Exception as e:
             return {'error': str(e)}
+    
+    async def get_threat_summary(self, hours: int = 24) -> Dict[str, Any]:
+        """Get threat intelligence summary"""
+        try:
+            # Generate sample summary data
+            summary = {
+                "total_indicators": 150,
+                "new_indicators": 25,
+                "high_risk_indicators": 8,
+                "critical_threats": 3,
+                "active_sources": len([s for s in self.intelligence_sources.values() if s.get('enabled')]),
+                "last_update": datetime.utcnow().isoformat(),
+                "threat_types": {
+                    "malware": 45,
+                    "phishing": 38,
+                    "ransomware": 12,
+                    "ddos": 25,
+                    "other": 30
+                },
+                "severity_distribution": {
+                    "critical": 8,
+                    "high": 25,
+                    "medium": 67,
+                    "low": 50
+                }
+            }
+            return summary
+        except Exception as e:
+            logger.error(f"Error getting threat summary: {e}")
+            return {"error": str(e)}
+    
+    async def get_all_indicators(self, hours: int = 24) -> Dict[str, List]:
+        """Get all threat indicators"""
+        try:
+            # Generate sample indicators
+            indicators = {
+                "recorded_future": [
+                    {
+                        "id": "rf_001",
+                        "indicator_type": "ip",
+                        "value": "203.0.113.100",
+                        "threat_type": "malware",
+                        "severity": "high",
+                        "confidence": 0.8,
+                        "first_seen": datetime.utcnow() - timedelta(hours=2),
+                        "last_seen": datetime.utcnow(),
+                        "description": "Malicious IP associated with C2 server",
+                        "tags": ["c2", "malware", "suspicious"],
+                        "context": {"source": " Recorded Future"}
+                    }
+                ],
+                "mandiant": [
+                    {
+                        "id": "md_001",
+                        "indicator_type": "hash",
+                        "value": "a1b2c3d4e5f6...",
+                        "threat_type": "ransomware",
+                        "severity": "critical",
+                        "confidence": 0.9,
+                        "first_seen": datetime.utcnow() - timedelta(hours=6),
+                        "last_seen": datetime.utcnow(),
+                        "description": "Ransomware payload hash",
+                        "tags": ["ransomware", "malware"],
+                        "context": {"source": "Mandiant"}
+                    }
+                ]
+            }
+            return indicators
+        except Exception as e:
+            logger.error(f"Error getting all indicators: {e}")
+            return {"error": str(e)}
+    
+    async def get_all_reports(self, hours: int = 24) -> Dict[str, List]:
+        """Get all threat reports"""
+        try:
+            # Generate sample reports
+            reports = {
+                "recorded_future": [
+                    {
+                        "id": "rf_report_001",
+                        "title": "New Ransomware Campaign Targeting Healthcare",
+                        "threat_type": "ransomware",
+                        "severity": "high",
+                        "confidence": 0.8,
+                        "published": datetime.utcnow() - timedelta(hours=4),
+                        "updated": datetime.utcnow(),
+                        "summary": "New ransomware variant targeting healthcare organizations",
+                        "indicators_count": 15,
+                        "tactics": ["initial_access", "execution"],
+                        "techniques": ["T1190", "T1059"],
+                        "affected_systems": ["healthcare", "windows"],
+                        "mitigation": "Apply security patches, monitor network traffic",
+                        "references": ["https://recordedfuture.com/..."]
+                    }
+                ],
+                "mandiant": [
+                    {
+                        "id": "md_report_001",
+                        "title": "APT29 Activity Increase",
+                        "threat_type": "apt",
+                        "severity": "critical",
+                        "confidence": 0.9,
+                        "published": datetime.utcnow() - timedelta(hours=8),
+                        "updated": datetime.utcnow(),
+                        "summary": "Increased activity from APT29 targeting government sector",
+                        "indicators_count": 25,
+                        "tactics": ["initial_access", "persistence"],
+                        "techniques": ["T1566", "T1547"],
+                        "affected_systems": ["government", "enterprise"],
+                        "mitigation": "Enhanced monitoring, access controls",
+                        "references": ["https://mandiant.com/..."]
+                    }
+                ]
+            }
+            return reports
+        except Exception as e:
+            logger.error(f"Error getting all reports: {e}")
+            return {"error": str(e)}
+    
+    async def search_all_indicators(self, query: str, indicator_type: Optional[str] = None) -> Dict[str, List]:
+        """Search threat indicators across all providers"""
+        try:
+            # Get all indicators first
+            all_indicators = await self.get_all_indicators(hours=24)
+            
+            # Filter by search query
+            search_results = {}
+            query_lower = query.lower()
+            
+            for provider, indicators in all_indicators.items():
+                filtered_indicators = []
+                
+                for indicator in indicators:
+                    # Check if query matches any field
+                    matches_query = (
+                        query_lower in indicator.get("value", "").lower() or
+                        query_lower in indicator.get("description", "").lower() or
+                        query_lower in indicator.get("indicator_type", "").lower() or
+                        any(query_lower in tag.lower() for tag in indicator.get("tags", []))
+                    )
+                    
+                    # Filter by indicator type if specified
+                    matches_type = True
+                    if indicator_type:
+                        matches_type = indicator.get("indicator_type", "").lower() == indicator_type.lower()
+                    
+                    if matches_query and matches_type:
+                        filtered_indicators.append(indicator)
+                
+                search_results[provider] = filtered_indicators
+            
+            return search_results
+        except Exception as e:
+            logger.error(f"Error searching indicators: {e}")
+            return {"error": str(e)}
+    
+    async def get_top_threats(self, hours: int = 24, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get top threats"""
+        try:
+            # Generate sample top threats
+            threats = [
+                {
+                    "rank": 1,
+                    "threat_name": "Conti Ransomware",
+                    "threat_type": "ransomware",
+                    "severity": "critical",
+                    "confidence": 0.9,
+                    "indicators_count": 25,
+                    "description": "Active ransomware campaign targeting multiple sectors",
+                    "first_seen": datetime.utcnow() - timedelta(hours=12),
+                    "affected_countries": ["US", "UK", "Germany"],
+                    "mitigation_available": True
+                },
+                {
+                    "rank": 2,
+                    "threat_name": "APT29 Phishing",
+                    "threat_type": "apt",
+                    "severity": "high",
+                    "confidence": 0.8,
+                    "indicators_count": 18,
+                    "description": "State-sponsored phishing campaign",
+                    "first_seen": datetime.utcnow() - timedelta(hours=24),
+                    "affected_countries": ["US", "Canada"],
+                    "mitigation_available": True
+                }
+            ]
+            return threats[:limit]
+        except Exception as e:
+            logger.error(f"Error getting top threats: {e}")
+            return [{"error": str(e)}]
+
+# Global threat intelligence manager
+threat_intel_manager = ThreatIntelligence()

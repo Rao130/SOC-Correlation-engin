@@ -5,10 +5,10 @@ from pydantic import BaseModel
 import logging
 
 from app.core.database import get_db
-from app.core.logging import setup_logging
+from app.core.logging import logger
 from app.models.reputation import ReputationCreate, ReputationUpdate, ReputationResponse
 
-logger = setup_logging()
+logger
 
 router = APIRouter()
 
@@ -47,7 +47,8 @@ async def check_reputation(
                     {"entity": request.entity},
                     {"$set": {"last_checked": datetime.utcnow()}}
                 )
-                return {
+                # Convert ObjectId to string for JSON serialization
+                existing_data = {
                     "entity": existing["entity"],
                     "entity_type": existing["entity_type"],
                     "aggregated_score": existing["aggregated_score"],
@@ -57,6 +58,9 @@ async def check_reputation(
                     "last_checked": existing.get("last_checked"),
                     "status": "found"
                 }
+                if "_id" in existing:
+                    existing_data["_id"] = str(existing["_id"])
+                return existing_data
             else:
                 # Create new reputation entry
                 new_reputation = {
@@ -72,7 +76,8 @@ async def check_reputation(
                     "status": "new"
                 }
                 
-                await collection.insert_one(new_reputation)
+                result = await collection.insert_one(new_reputation)
+                new_reputation["_id"] = str(result.inserted_id)
                 
                 # Trigger background analysis
                 background_tasks.add_task(analyze_entity_reputation, request.entity)

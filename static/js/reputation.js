@@ -233,38 +233,12 @@ class ReputationManager {
             console.log('Real reputation data loaded:', this.reputationData.length, 'entities');
         } catch (error) {
             console.error('Error loading reputation data:', error);
-            // Fallback to mock data if API fails
-            this.reputationData = this.generateMockReputationData();
+            // Show empty state instead of mock data
+            this.reputationData = [];
             this.applyFilters();
             this.updateStatistics();
             this.updateRecentThreats();
-            console.log('Fallback to mock data loaded');
-        }
-    }
-
-    async createInitialReputationData() {
-        try {
-            // Create some initial reputation data
-            const mockData = this.generateMockReputationData();
-            
-            for (const entity of mockData.slice(0, 20)) { // Start with 20 entities
-                try {
-                    await this.createReputationEntity(entity);
-                } catch (error) {
-                    console.error('Error creating entity:', entity.entity, error);
-                    // Continue with other entities even if one fails
-                }
-            }
-            
-            console.log('Initial reputation data created');
-        } catch (error) {
-            console.error('Error creating initial data:', error);
-        }
-    }
-
-    async createReputationEntity(entity) {
-        try {
-            const response = await fetch('/api/reputation/check', {
+            console.log('No reputation data available');
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

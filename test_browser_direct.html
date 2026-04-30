@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct Logs Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log-entry { margin: 5px 0; padding: 10px; border: 1px solid #ccc; }
+        .error { color: red; }
+        .success { color: green; }
+        .debug { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Direct Logs Test</h1>
+    <button onclick="testLogs()">Test Logs API</button>
+    <button onclick="clearLogs()">Clear</button>
+    <div id="output"></div>
+    
+    <script>
+        async function testLogs() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<div class="debug">Testing logs API...</div>';
+            
+            try {
+                // Test the logs API directly
+                const response = await fetch('/api/logs?limit=10');
+                output.innerHTML += `<div class="debug">API Response: ${response.status}</div>`;
+                
+                if (response.ok) {
+                    const logs = await response.json();
+                    output.innerHTML += `<div class="success">Got ${logs.length} logs</div>`;
+                    
+                    // Display logs with timestamps
+                    logs.forEach((log, index) => {
+                        const timestamp = log.timestamp || 'No timestamp';
+                        const message = log.message || 'No message';
+                        const level = log.level || 'No level';
+                        
+                        output.innerHTML += `
+                            <div class="log-entry">
+                                <strong>${index + 1}. [${level}] ${timestamp}</strong><br>
+                                ${message}
+                            </div>
+                        `;
+                    });
+                    
+                    // Check order
+                    if (logs.length >= 2) {
+                        const first = new Date(logs[0].timestamp);
+                        const second = new Date(logs[1].timestamp);
+                        const orderCorrect = first > second;
+                        output.innerHTML += `<div class="${orderCorrect ? 'success' : 'error'}">
+                            Order check: ${orderCorrect ? 'CORRECT (newest first)' : 'INCORRECT'}
+                        </div>`;
+                    }
+                    
+                } else {
+                    output.innerHTML += `<div class="error">API Error: ${response.statusText}</div>`;
+                }
+                
+            } catch (error) {
+                output.innerHTML += `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+        
+        function clearLogs() {
+            document.getElementById('output').innerHTML = '';
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            setTimeout(testLogs, 1000);
+        };
+        
+        // Test WebSocket
+        function testWebSocket() {
+            const clientId = 'test_' + Date.now();
+            const wsUrl = `ws://${window.location.hostname}:8000/ws/${clientId}`;
+            
+            output.innerHTML += `<div class="debug">Testing WebSocket: ${wsUrl}</div>`;
+            
+            const ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function() {
+                output.innerHTML += `<div class="success">WebSocket connected</div>`;
+                ws.send(JSON.stringify({type: 'get_logs'}));
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                output.innerHTML += `<div class="debug">WebSocket message: ${data.type}</div>`;
+            };
+            
+            ws.onerror = function(error) {
+                output.innerHTML += `<div class="error">WebSocket error: ${error}</div>`;
+            };
+        }
+    </script>
+</body>
+</html>

@@ -10,9 +10,30 @@ let timelineChart = null;
 
 // Initialize logs page
 document.addEventListener('DOMContentLoaded', function() {
-    if (window.location.hash === '#logs' || document.getElementById('logs-section').classList.contains('active')) {
+    console.log('📋 Logs.js loaded - DOM ready');
+    
+    // Always initialize logs page when DOM is loaded
+    setTimeout(() => {
+        console.log('📋 Starting logs initialization...');
         initializeLogsPage();
-    }
+        initLogsWebSocket(); // Add WebSocket for real-time log updates
+    }, 500);
+});
+
+// Also try to load logs immediately if logs section is visible
+window.addEventListener('load', function() {
+    console.log('📋 Window fully loaded - checking logs section...');
+    
+    // Check if we're on the logs page or if logs section is visible
+    setTimeout(() => {
+        const logsSection = document.getElementById('logs-section');
+        if (logsSection) {
+            console.log('📋 Logs section found, forcing logs load...');
+            loadLogs(); // Force load logs immediately
+        } else {
+            console.log('📋 Logs section not found yet');
+        }
+    }, 1000);
 });
 
 // Also initialize when logs section is shown
@@ -40,8 +61,100 @@ function initializeLogsPage() {
     console.log('Initializing Logs System...');
     loadLogFilters();
     loadLogs();
-    initializeTimelineChart();
-    startAutoRefresh();
+    setupLogEventListeners();
+    startLogAutoRefresh();
+    initLogsWebSocket(); // Add WebSocket for real-time log updates
+}
+
+function initLogsWebSocket() {
+    try {
+        const clientId = 'logs_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const wsUrl = `ws://${window.location.hostname}:8000/ws/${clientId}`;
+        
+        console.log('🔌 Logs WebSocket connecting:', wsUrl);
+        window.logsWs = new WebSocket(wsUrl);
+        
+        window.logsWs.onopen = () => {
+            console.log('✅ Logs WebSocket connected');
+            
+            // Request logs data
+            window.logsWs.send(JSON.stringify({
+                type: 'request_logs',
+                limit: 1000
+            }));
+        };
+        
+        window.logsWs.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleLogsWebSocketMessage(data);
+            } catch (error) {
+                console.error('Logs WebSocket message parse error:', error);
+            }
+        };
+        
+        window.logsWs.onclose = () => {
+            console.log('❌ Logs WebSocket disconnected');
+            // Reconnect after 5 seconds
+            setTimeout(() => {
+                initLogsWebSocket();
+            }, 5000);
+        };
+        
+        window.logsWs.onerror = (error) => {
+            console.error('Logs WebSocket error:', error);
+        };
+        
+    } catch (error) {
+        console.error('Failed to initialize Logs WebSocket:', error);
+    }
+}
+
+function handleLogsWebSocketMessage(data) {
+    console.log('📨 Logs WebSocket message:', data.type);
+    
+    switch(data.type) {
+        case 'new_log':
+            console.log('📋 New log received:', data.log?.message);
+            if (data.log) {
+                // Add new log to the beginning of current logs
+                if (window.currentLogs) {
+                    window.currentLogs.unshift(data.log);
+                    // Keep only last 1000 logs
+                    if (window.currentLogs.length > 1000) {
+                        window.currentLogs = window.currentLogs.slice(0, 1000);
+                    }
+                    // Apply filters and refresh logs display
+                    const filteredLogs = applyFilters(window.currentLogs);
+                    displayLogs(filteredLogs);
+                    updateLogStatistics(filteredLogs);
+                }
+            }
+            break;
+            
+        case 'logs_response':
+            console.log('📋 Logs response received');
+            if (data.logs && Array.isArray(data.logs)) {
+                window.currentLogs = data.logs;
+                const filteredLogs = applyFilters(data.logs);
+                displayLogs(filteredLogs);
+                updateLogStatistics(filteredLogs);
+            }
+            break;
+            
+        case 'log_update':
+            console.log('📊 Log update received');
+            // Refresh logs when update comes
+            loadLogs();
+            break;
+            
+        case 'pong':
+            // Heartbeat response
+            break;
+            
+        default:
+            console.log('🔍 Unknown logs WebSocket message:', data.type);
+    }
 }
 
 // Load log filter options
@@ -116,24 +229,48 @@ async function loadLogFilters() {
     }
 }
 
-// Load logs with mock data
+// Load logs from API
 async function loadLogs() {
     try {
-        const mockLogs = generateMockLogs();
+        console.log('Loading logs from API...');
+        
+        // Try to fetch logs from the API
+        const response = await fetch('/api/logs?limit=1000');
+        let logs = [];
+        
+        if (response.ok) {
+            logs = await response.json();
+            console.log('Loaded logs from API:', logs.length);
+        } else {
+            console.warn('API response not OK, using fallback:', response.status);
+            logs = generateMockLogs();
+        }
+        
+        // Store logs globally for WebSocket updates
+        window.currentLogs = logs;
         
         // Apply current filters to the logs
-        const filteredLogs = applyFilters(mockLogs);
+        const filteredLogs = applyFilters(logs);
         
         displayLogs(filteredLogs);
         updateTimelineChart(filteredLogs);
         updateLogStatistics(filteredLogs);
         
         console.log('Logs loaded and filtered successfully:', {
-            total: mockLogs.length,
+            total: logs.length,
             filtered: filteredLogs.length
         });
     } catch (error) {
-        console.error('Error loading logs:', error);
+        console.error('Error loading logs from API:', error);
+        console.log('Using mock logs as fallback');
+        
+        // Fallback to mock data
+        const mockLogs = generateMockLogs();
+        const filteredLogs = applyFilters(mockLogs);
+        
+        displayLogs(filteredLogs);
+        updateTimelineChart(filteredLogs);
+        updateLogStatistics(filteredLogs);
     }
 }
 
@@ -215,6 +352,13 @@ function applyFilters(logs) {
         );
     }
     
+    // Sort by timestamp (newest first)
+    filteredLogs.sort((a, b) => {
+        const timestampA = new Date(a.timestamp || '');
+        const timestampB = new Date(b.timestamp || '');
+        return timestampB - timestampA; // Descending order (newest first)
+    });
+    
     return filteredLogs;
 }
 
@@ -237,83 +381,51 @@ function handleSearchKeyup(event) {
     }
 }
 
-// Generate mock log data
+// Generate mock log data - removed to prevent old data display
 function generateMockLogs() {
-    const logs = [];
-    const currentTime = new Date();
-    const ipAddresses = ['192.168.1.1', '192.168.1.105', '10.0.0.15', '172.16.0.45', '192.168.2.30'];
-    
-    for (let i = 0; i < 50; i++) {
-        const timestamp = new Date(currentTime.getTime() - i * 60000); // 1 minute intervals
-        const levels = ['ERROR', 'WARNING', 'INFO', 'DEBUG', 'CRITICAL']; // Added CRITICAL
-        const categories = ['security', 'performance', 'system', 'application'];
-        const messages = [
-            'SQL injection attempt blocked',
-            'High CPU usage detected',
-            'User login successful',
-            'Database connection established',
-            'Firewall rule updated',
-            'Memory usage above threshold',
-            'API request processed',
-            'System backup completed',
-            'Security scan initiated',
-            'Cache cleared successfully',
-            'Critical system failure detected',
-            'Unauthorized access attempt blocked',
-            'Database connection timeout',
-            'Service unavailable error',
-            'Authentication failed for user'
-        ];
-        
-        // Ensure we have some critical and error logs
-        let selectedLevel = levels[Math.floor(Math.random() * levels.length)];
-        if (i < 5) {
-            // First 5 logs are more likely to be critical/errors
-            selectedLevel = Math.random() > 0.3 ? 'CRITICAL' : 'ERROR';
-        } else if (i < 10) {
-            // Next 5 logs have higher chance of errors
-            selectedLevel = Math.random() > 0.5 ? 'ERROR' : levels[Math.floor(Math.random() * (levels.length - 1))];
-        }
-        
-        logs.push({
-            id: `LOG-${String(i + 1).padStart(6, '0')}`,
-            timestamp: timestamp.toISOString(),
-            level: selectedLevel,
-            category: categories[Math.floor(Math.random() * categories.length)],
-            message: messages[Math.floor(Math.random() * messages.length)],
-            source: `server-${Math.floor(Math.random() * 5) + 1}`,
-            user_id: Math.random() > 0.5 ? `user-${Math.floor(Math.random() * 100) + 1}` : null,
-            ip_address: ipAddresses[Math.floor(Math.random() * ipAddresses.length)]
-        });
-    }
-    
-    return logs;
+    // Return empty array - no mock data
+    return [];
 }
 
 // Display logs in the table
 function displayLogs(logs) {
+    console.log('📋 Displaying logs:', logs.length, 'entries');
+    
     const tbody = document.getElementById('logs-tbody');
-    if (!tbody) return;
+    if (!tbody) {
+        console.error('❌ logs-tbody not found');
+        return;
+    }
     
     tbody.innerHTML = '';
     
-    logs.forEach(log => {
+    if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9">No logs available</td></tr>';
+        console.log('📋 No logs to display');
+        return;
+    }
+    
+    logs.forEach((log, index) => {
         const row = document.createElement('tr');
+        const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A';
+        
         row.innerHTML = `
-            <td>${log.id}</td>
-            <td>${formatTimestamp(log.timestamp)}</td>
-            <td><span class="log-level ${log.level.toLowerCase()}">${log.level}</span></td>
-            <td>${log.category}</td>
-            <td>${log.message}</td>
-            <td>${log.source}</td>
+            <td>${log.id || index}</td>
+            <td>${timestamp}</td>
+            <td><span class="log-level ${log.level?.toLowerCase() || 'info'}">${log.level || 'INFO'}</span></td>
+            <td>${log.category || 'SYSTEM'}</td>
+            <td>${log.message || 'No message'}</td>
+            <td>${log.source || 'System'}</td>
             <td>${log.user_id || 'System'}</td>
             <td>${log.ip_address || 'N/A'}</td>
             <td>
-                <button class="btn btn-sm btn-primary" onclick="viewLogDetails('${log.id}')">View</button>
+                <button class="btn btn-sm btn-primary" onclick="viewLogDetails('${log.id || index}')">View</button>
             </td>
         `;
         tbody.appendChild(row);
     });
+    
+    console.log('✅ Displayed', logs.length, 'logs in table');
     
     // Update statistics based on actual log data
     updateLogStatistics(logs);
@@ -321,10 +433,15 @@ function displayLogs(logs) {
 
 // Update log statistics based on actual log data
 function updateLogStatistics(logs) {
+    console.log('📊 Updating log statistics for', logs.length, 'logs');
+    
     // Calculate total logs
     const totalLogsElement = document.getElementById('total-logs');
     if (totalLogsElement) {
         totalLogsElement.textContent = logs.length;
+        console.log('✅ Total logs updated:', logs.length);
+    } else {
+        console.log('⚠️ total-logs element not found');
     }
     
     // Calculate error logs

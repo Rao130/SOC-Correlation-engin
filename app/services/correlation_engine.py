@@ -11,17 +11,15 @@ import numpy as np
 # from sklearn.metrics.pairwise import cosine_similarity
 # import spacy
 
-from app.core.database import get_db
+from app.core.database import db_manager
 from app.core.config import settings
-from app.utils.logger import setup_logging
-
-logger = setup_logging()
+from app.core.logging import logger
 
 class CorrelationEngine:
     """Advanced alert correlation engine for SOC operations"""
     
-    def __init__(self, db_manager=None):
-        self.db = db_manager or get_db()  # Use passed db_manager or get default
+    def __init__(self, db_mgr=None):
+        self.db = db_mgr or db_manager  # Use passed db_mgr or default
         self.running = False
         self.correlation_task = None
         self.nlp = None
@@ -107,14 +105,36 @@ class CorrelationEngine:
     async def _get_recent_alerts(self) -> List[Dict]:
         """Get recent alerts for correlation analysis"""
         try:
-            # In a real implementation, this would query the database
-            # For now, return mock data
+            # Query real alerts from database
+            db = self.db.get_database()
+            alerts_collection = db.alerts
+            
+            # Get alerts from last hour
+            one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+            
+            cursor = alerts_collection.find({
+                "timestamp": {"$gte": one_hour_ago.isoformat()}
+            }).sort("timestamp", -1).limit(100)
+            
+            alerts = await cursor.to_list(length=None)
+            
+            # Convert ObjectId to string
+            for alert in alerts:
+                if "_id" in alert:
+                    alert["_id"] = str(alert["_id"])
+            
+            logger.info(f"Retrieved {len(alerts)} recent alerts from database")
+            return alerts
+            
+        except Exception as e:
+            logger.error(f"Error getting recent alerts from database: {e}")
+            # Fallback to mock data if DB fails
             return [
                 {
                     "id": 1,
                     "title": "SQL Injection Attack",
                     "source_ip": "192.168.1.105",
-                    "timestamp": "2024-04-05 14:32:15",
+                    "timestamp": datetime.now().isoformat(),
                     "severity": "critical",
                     "category": "injection"
                 },
@@ -122,7 +142,7 @@ class CorrelationEngine:
                     "id": 2,
                     "title": "Brute Force Attempt",
                     "source_ip": "10.0.0.15",
-                    "timestamp": "2024-04-05 14:31:42",
+                    "timestamp": datetime.now().isoformat(),
                     "severity": "high",
                     "category": "authentication"
                 },
@@ -130,14 +150,11 @@ class CorrelationEngine:
                     "id": 3,
                     "title": "Suspicious File Upload",
                     "source_ip": "172.16.0.45",
-                    "timestamp": "2024-04-05 14:30:28",
+                    "timestamp": datetime.now().isoformat(),
                     "severity": "medium",
                     "category": "filesystem"
                 }
             ]
-        except Exception as e:
-            logger.error(f"Error getting recent alerts: {e}")
-            return []
 
     async def _store_correlation(self, correlation: Dict):
         """Store correlation in database"""

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Browser Cache</title>
+    <script>
+        // Clear all localStorage
+        localStorage.clear();
+        
+        // Clear all sessionStorage
+        sessionStorage.clear();
+        
+        // Clear IndexedDB
+        if (window.indexedDB) {
+            const databases = await indexedDB.databases();
+            databases.forEach(db => {
+                indexedDB.deleteDatabase(db.name);
+            });
+        }
+        
+        // Clear cookies
+        document.cookie.split(";").forEach(function(c) { 
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+        });
+        
+        // Force refresh
+        window.location.reload(true);
+        
+        console.log("Browser cache cleared!");
+    </script>
+</head>
+<body>
+    <h1>Clearing Browser Cache...</h1>
+    <p>This page will automatically clear all browser data and refresh.</p>
+</body>
+</html>

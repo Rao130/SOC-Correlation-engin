@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Filter Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .debug-section { margin: 20px 0; padding: 15px; background: white; border-radius: 8px; }
+        .debug-result { padding: 10px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .warning { background: #fff3cd; color: #856404; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 8px; border: 1px solid #ddd; text-align: left; }
+        th { background: #f2f2f2; }
+        .severity-critical { background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; }
+        .severity-high { background: #fd7e14; color: white; padding: 2px 6px; border-radius: 3px; }
+        .severity-medium { background: #ffc107; color: black; padding: 2px 6px; border-radius: 3px; }
+        .severity-low { background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Filter Debug Console</h1>
+    
+    <div class="debug-section">
+        <h2>Environment Check</h2>
+        <div id="env-check"></div>
+    </div>
+
+    <div class="debug-section">
+        <h2>Filter Test</h2>
+        <button onclick="testFilter()">Test Filter Function</button>
+        <button onclick="testRender()">Test Render Function</button>
+        <button onclick="testHTMLElements()">Test HTML Elements</button>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="debug-section">
+        <h2>Alerts Table</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Title</th>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Confidence</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-tbody">
+                <tr><td colspan="8" style="text-align: center;">No alerts loaded</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="debug-section">
+        <h2>Filter Controls</h2>
+        <label>
+            <input type="checkbox" onchange="applyFilter('severity', 'critical')"> Critical
+        </label><br>
+        <label>
+            <input type="checkbox" onchange="applyFilter('severity', 'high')"> High
+        </label><br>
+        <label>
+            <input type="checkbox" onchange="applyFilter('status', 'new')"> New
+        </label><br>
+        <label>
+            <input type="checkbox" onchange="applyFilter('status', 'investigating')"> Investigating
+        </label><br>
+        <button onclick="clearAllFilters()">Clear All Filters</button>
+        <div id="applied-filters" style="margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        // Mock dashboard class for testing
+        class TestDashboard {
+            constructor() {
+                this.alerts = [
+                    {
+                        _id: '1',
+                        timestamp: '2026-04-28T12:30:00',
+                        title: 'Critical Security Alert',
+                        severity: 'critical',
+                        category: 'security',
+                        status: 'new',
+                        source: '192.168.1.1',
+                        confidence: 95,
+                        description: 'Critical security threat detected'
+                    },
+                    {
+                        _id: '2',
+                        timestamp: '2026-04-28T12:25:00',
+                        title: 'High Network Alert',
+                        severity: 'high',
+                        category: 'network',
+                        status: 'investigating',
+                        source: '192.168.1.2',
+                        confidence: 85,
+                        description: 'High priority network issue'
+                    },
+                    {
+                        _id: '3',
+                        timestamp: '2026-04-28T12:20:00',
+                        title: 'Medium System Alert',
+                        severity: 'medium',
+                        category: 'system',
+                        status: 'resolved',
+                        source: '192.168.1.3',
+                        confidence: 75,
+                        description: 'Medium severity system alert'
+                    },
+                    {
+                        _id: '4',
+                        timestamp: '2026-04-28T12:15:00',
+                        title: 'Low Application Alert',
+                        severity: 'low',
+                        category: 'application',
+                        status: 'false_positive',
+                        source: '192.168.1.4',
+                        confidence: 65,
+                        description: 'Low priority application issue'
+                    },
+                    {
+                        _id: '5',
+                        timestamp: '2026-04-28T12:10:00',
+                        title: 'Another Critical Alert',
+                        severity: 'critical',
+                        category: 'security',
+                        status: 'investigating',
+                        source: '192.168.1.5',
+                        confidence: 90,
+                        description: 'Another critical security alert'
+                    }
+                ];
+                this.activeFilters = {};
+                this.init();
+            }
+
+            init() {
+                this.renderFilteredAlerts(this.alerts);
+            }
+
+            applyFilter(filterType, filterValue) {
+                console.log(`Applying filter: ${filterType} = ${filterValue}`);
+                
+                if (!this.activeFilters) {
+                    this.activeFilters = {};
+                }
+                
+                if (this.activeFilters[filterType] === filterValue) {
+                    delete this.activeFilters[filterType];
+                } else {
+                    this.activeFilters[filterType] = filterValue;
+                }
+                
+                this.applyAllFilters();
+            }
+
+            applyAllFilters() {
+                let filtered = this.alerts;
+                
+                if (this.activeFilters && this.activeFilters.severity) {
+                    filtered = filtered.filter(alert => alert.severity === this.activeFilters.severity);
+                }
+                
+                if (this.activeFilters && this.activeFilters.status) {
+                    filtered = filtered.filter(alert => alert.status === this.activeFilters.status);
+                }
+                
+                if (this.activeFilters && this.activeFilters.category) {
+                    filtered = filtered.filter(alert => alert.category === this.activeFilters.category);
+                }
+                
+                this.updateAppliedFiltersDisplay();
+                this.renderFilteredAlerts(filtered);
+                
+                return filtered;
+            }
+
+            updateAppliedFiltersDisplay() {
+                const appliedFiltersDiv = document.getElementById('applied-filters');
+                if (!appliedFiltersDiv) return;
+                
+                appliedFiltersDiv.innerHTML = '';
+                
+                if (this.activeFilters && Object.keys(this.activeFilters).length > 0) {
+                    Object.entries(this.activeFilters).forEach(([filterType, filterValue]) => {
+                        const filterTag = document.createElement('span');
+                        filterTag.className = 'applied-filter-tag';
+                        filterTag.style.cssText = 'display: inline-block; background: #007bff; color: white; padding: 2px 8px; margin: 2px; border-radius: 12px; font-size: 12px;';
+                        filterTag.innerHTML = `
+                            ${filterType}: ${filterValue}
+                            <button onclick="window.testDashboard.removeFilter('${filterType}')" style="background: none; border: none; color: white; margin-left: 5px; cursor: pointer;">×</button>
+                        `;
+                        appliedFiltersDiv.appendChild(filterTag);
+                    });
+                }
+            }
+
+            removeFilter(filterType) {
+                if (this.activeFilters && this.activeFilters[filterType]) {
+                    delete this.activeFilters[filterType];
+                    
+                    const checkbox = document.querySelector(`input[onchange*="applyFilter('${filterType}'"]`);
+                    if (checkbox) {
+                        checkbox.checked = false;
+                    }
+                    
+                    this.applyAllFilters();
+                }
+            }
+
+            clearAllFilters() {
+                this.activeFilters = {};
+                
+                document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+                
+                const appliedFiltersDiv = document.getElementById('applied-filters');
+                if (appliedFiltersDiv) {
+                    appliedFiltersDiv.innerHTML = '';
+                }
+                
+                this.renderFilteredAlerts(this.alerts);
+            }
+
+            renderFilteredAlerts(alerts) {
+                console.log('Rendering alerts:', alerts.length);
+                
+                const tbody = document.getElementById('alerts-tbody');
+                if (!tbody) {
+                    console.error('alerts-tbody not found');
+                    return;
+                }
+
+                if (!alerts || alerts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No alerts found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = alerts.map(alert => `
+                    <tr>
+                        <td>${this.formatTime(alert.timestamp)}</td>
+                        <td>${alert.title || 'N/A'}</td>
+                        <td><span class="severity-${alert.severity}">${alert.severity}</span></td>
+                        <td>${alert.category || 'N/A'}</td>
+                        <td>${alert.status || 'N/A'}</td>
+                        <td>${alert.source || 'N/A'}</td>
+                        <td>${alert.confidence || 'N/A'}%</td>
+                        <td>
+                            <button onclick="console.log('View alert:', '${alert._id}')">View</button>
+                            <button onclick="console.log('Update alert:', '${alert._id}')">Update</button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                console.log('Alerts rendered successfully');
+            }
+
+            formatTime(timestamp) {
+                const date = new Date(timestamp);
+                return date.toLocaleString();
+            }
+        }
+
+        // Initialize test dashboard
+        let testDashboard;
+
+        function testFilter() {
+            const results = document.getElementById('test-results');
+            results.innerHTML = '';
+
+            if (!testDashboard) {
+                results.innerHTML = '<div class="error">Test dashboard not initialized</div>';
+                return;
+            }
+
+            // Test filter functionality
+            const criticalAlerts = testDashboard.applyFilter('severity', 'critical');
+            results.innerHTML += `<div class="info">Critical filter applied: ${criticalAlerts.length} alerts</div>`;
+            
+            const investigatingAlerts = testDashboard.applyFilter('status', 'investigating');
+            results.innerHTML += `<div class="info">Status filter applied: ${investigatingAlerts.length} alerts</div>`;
+            
+            results.innerHTML += '<div class="success">Filter test completed</div>';
+        }
+
+        function testRender() {
+            const results = document.getElementById('test-results');
+            
+            if (!testDashboard) {
+                results.innerHTML = '<div class="error">Test dashboard not initialized</div>';
+                return;
+            }
+
+            try {
+                testDashboard.renderFilteredAlerts(testDashboard.alerts);
+                results.innerHTML = '<div class="success">Render test completed successfully</div>';
+            } catch (error) {
+                results.innerHTML = `<div class="error">Render test failed: ${error.message}</div>`;
+            }
+        }
+
+        function testHTMLElements() {
+            const results = document.getElementById('test-results');
+            results.innerHTML = '';
+
+            const tbody = document.getElementById('alerts-tbody');
+            results.innerHTML += `<div class="${tbody ? 'success' : 'error'}">alerts-tbody: ${tbody ? 'Found' : 'Not Found'}</div>`;
+
+            const appliedFilters = document.getElementById('applied-filters');
+            results.innerHTML += `<div class="${appliedFilters ? 'success' : 'error'}">applied-filters: ${appliedFilters ? 'Found' : 'Not Found'}</div>`;
+        }
+
+        function applyFilter(filterType, filterValue) {
+            if (testDashboard) {
+                testDashboard.applyFilter(filterType, filterValue);
+            }
+        }
+
+        function clearAllFilters() {
+            if (testDashboard) {
+                testDashboard.clearAllFilters();
+            }
+        }
+
+        // Environment check
+        function checkEnvironment() {
+            const envDiv = document.getElementById('env-check');
+            let html = '';
+
+            html += `<div class="info">Browser: ${navigator.userAgent}</div>`;
+            html += `<div class="info">Console available: ${typeof console !== 'undefined'}</div>`;
+            html += `<div class="info">Document ready: ${document.readyState}</div>`;
+
+            envDiv.innerHTML = html;
+        }
+
+        // Initialize on page load
+        window.onload = function() {
+            checkEnvironment();
+            testDashboard = new TestDashboard();
+            console.log('Test dashboard initialized');
+        };
+    </script>
+</body>
+</html>

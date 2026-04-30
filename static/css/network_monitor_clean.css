@@ -1,0 +1,22 @@
+/* Clean Network Monitor CSS - No Conflicts */
+.network-monitor {
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a0f1f 50%, #0f0f23 100%);
+    border: 1px solid #00ffff;
+    border-radius: 15px;
+    padding: 20px;
+    color: #00ffff;
+    font-family: 'Courier New', monospace;
+    position: relative;
+    overflow: hidden;
+    min-height: 100vh;
+}
+
+/* Only show network monitor when on network page */
+body:has(#network-section.network-monitor) .network-monitor {
+    display: block !important;
+}
+
+/* Hide network monitor on all other pages */
+body:not(:has(#network-section.network-monitor)) .network-monitor {
+    display: none !important;
+}

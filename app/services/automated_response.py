@@ -6,10 +6,8 @@ import json
 from enum import Enum
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.utils.logger import setup_logging
-
-logger = setup_logging()
+from app.core.database import db_manager
+from app.core.logging import logger
 
 class ResponseAction(Enum):
     BLOCK = "block"
@@ -23,7 +21,7 @@ class AutomatedResponse:
     """Automated incident response and remediation"""
     
     def __init__(self):
-        self.db = get_db()
+        self.db = db_manager
         self.response_rules = {}
         self.action_history = []
         self._load_rules()

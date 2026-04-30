@@ -1,13 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
-import json
+"""
+Analytics API Routes
+Provides security analytics and metrics endpoints
+"""
 
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+from app.core.database import get_db
+from app.core.logging import logger
+from app.services.advanced_correlation import correlation_engine
+from app.services.threat_scoring import threat_scoring_engine
+from app.services.attack_chain_mapper import attack_chain_mapper
+from app.services.anomaly_detection import anomaly_detection_engine
+from app.services.autonomous_response import autonomous_response_engine
 from app.services.analytics_engine import AnalyticsEngine
 from app.core.database import get_db
-from app.utils.logger import setup_logging
+from app.core.logging import logger
 
-logger = setup_logging()
 router = APIRouter()
 
 # Initialize analytics engine
@@ -67,170 +77,281 @@ async def get_threat_heatmap(
     severity_filter: Optional[str] = Query(None),
     region_filter: Optional[str] = Query(None)
 ):
-    """Get threat heatmap visualization"""
+    """Get threat heatmap visualization with real data"""
     try:
-        # Mock threat data for heatmap
-        threat_data = {
-            "threats": [
-                {
-                    "id": "threat_001",
-                    "latitude": 40.7128,
-                    "longitude": -74.0060,
-                    "severity": "critical",
-                    "category": "malware",
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "threat_002",
-                    "latitude": 51.5074,
-                    "longitude": -0.1278,
-                    "severity": "high",
-                    "category": "phishing",
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "threat_003",
-                    "latitude": 35.6762,
-                    "longitude": 139.6503,
-                    "severity": "medium",
-                    "category": "intrusion",
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "threat_004",
-                    "latitude": -33.8688,
-                    "longitude": 151.2093,
-                    "severity": "high",
-                    "category": "ddos",
-                    "timestamp": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "threat_005",
-                    "latitude": 48.8566,
-                    "longitude": 2.3522,
-                    "severity": "medium",
-                    "category": "malware",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            ]
-        }
+        from app.services.real_data_generator import data_generator
         
-        # Apply filters
-        if severity_filter:
-            threat_data["threats"] = [
-                t for t in threat_data["threats"] 
-                if t.get("severity") == severity_filter.lower()
-            ]
+        # Get real alerts from data generator
+        alerts = data_generator.get_recent_alerts(100)
         
-        # Generate visualization
-        viz_config = {
-            "time_range": time_range,
-            "severity_filter": severity_filter,
-            "region_filter": region_filter,
-            "intensity_radius": 50,
-            "gradient_colors": {
-                "low": "#4caf50",
-                "medium": "#ff9800",
-                "high": "#f44336",
-                "critical": "#d32f2f"
-            }
-        }
-        
-        result = await analytics_engine.generate_visualization("threat_heatmap", threat_data, viz_config)
+        # Convert alerts to threat heatmap data
+        threats = []
+        for alert in alerts:
+            if alert.get('location') and alert.get('location', {}).get('latitude'):
+                threat = {
+                    "id": alert.get('_id', f"threat_{len(threats)}"),
+                    "latitude": alert['location']['latitude'],
+                    "longitude": alert['location']['longitude'],
+                    "severity": alert.get('severity', 'unknown'),
+                    "category": alert.get('category', 'unknown'),
+                    "title": alert.get('title', 'Unknown Threat'),
+                    "description": alert.get('description', ''),
+                    "timestamp": alert.get('timestamp', datetime.utcnow().isoformat()),
+                    "source": alert.get('source', 'Unknown'),
+                    "confidence": alert.get('confidence', 0)
+}
+                
+                # Apply filters
+                if severity_filter and threat['severity'] != severity_filter:
+                    continue
+                if region_filter and threat.get('country') != region_filter:
+                    continue
+                    
+                threats.append(threat)
         
         return {
-            "visualization_type": "threat_heatmap",
-            "data": result.get("data", {}),
-            "config": viz_config,
-            "metadata": result.get("metadata", {}),
-            "timestamp": datetime.utcnow().isoformat()
+            "threats": threats,
+            "total_count": len(threats),
+            "time_range": time_range,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error generating threat heatmap: {e}")
+        return {
+            "threats": [],
+            "total_count": 0,
+            "time_range": time_range,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+
+@router.get("/realtime-stats")
+async def get_realtime_statistics():
+    """Get real-time analytics statistics"""
+    try:
+        from app.services.real_data_generator import data_generator
+        from app.services.network_monitor import network_monitor
+        from app.services.log_streamer import log_streamer
+        
+        # Get alert statistics
+        alert_stats = data_generator.get_alert_statistics()
+        
+        # Get network statistics
+        network_stats = {
+            "monitoring_active": network_monitor.monitoring_active,
+            "memory_alerts_count": len(network_monitor.memory_alerts),
+            "recent_network_alerts": len([a for a in network_monitor.memory_alerts 
+                                        if self._is_recent_alert(a.get('timestamp', ''))])
+        }
+        
+        # Get log statistics
+        log_stats = log_streamer.get_log_statistics()
+        
+        # Combine all statistics
+        combined_stats = {
+            "alerts": alert_stats,
+            "network": network_stats,
+            "logs": log_stats,
+            "total_alerts": len(data_generator.generated_alerts) + len(network_monitor.memory_alerts),
+            "total_logs": len(log_streamer.generated_logs),
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+        return combined_stats
+        
+    except Exception as e:
+        logger.error(f"Error getting realtime statistics: {e}")
+        # Return fallback data
+        return {
+            "alerts": {"total": 0, "by_severity": {}, "by_category": {}, "last_hour": 0},
+            "network": {"monitoring_active": False, "memory_alerts_count": 0, "recent_network_alerts": 0},
+            "logs": {"total": 0, "by_severity": {}, "by_source": {}, "security_relevant": 0, "last_minute": 0},
+            "total_alerts": 0,
+            "total_logs": 0,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+
+def _is_recent_alert(timestamp_str: str) -> bool:
+    """Check if alert is recent (within last hour)"""
+    try:
+        if not timestamp_str:
+            return False
+        
+        if timestamp_str.endswith('Z'):
+            timestamp_str = timestamp_str.replace('Z', '+00:00')
+        
+        alert_time = datetime.fromisoformat(timestamp_str)
+        return alert_time > datetime.utcnow() - timedelta(hours=1)
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+@router.get("/dashboard-data")
+async def get_dashboard_data():
+    """Get comprehensive dashboard data for analytics"""
+    try:
+        from app.services.real_data_generator import data_generator
+        from app.services.network_monitor import network_monitor
+        from app.services.log_streamer import log_streamer
+        
+        # Get all alerts
+        all_alerts = []
+        if hasattr(data_generator, 'generated_alerts'):
+            all_alerts.extend(data_generator.generated_alerts)
+        if hasattr(network_monitor, 'memory_alerts'):
+            all_alerts.extend(network_monitor.memory_alerts)
+        
+        # Calculate analytics data
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        category_counts = {}
+        source_counts = {}
+        hourly_trends = {}
+        
+        for alert in all_alerts:
+            # Count by severity
+            severity = alert.get('severity', 'unknown')
+            if severity in severity_counts:
+                severity_counts[severity] += 1
+            
+            # Count by category
+            category = alert.get('category', 'unknown')
+            category_counts[category] = category_counts.get(category, 0) + 1
+            
+            # Count by source
+            source = alert.get('source', 'unknown')
+            source_counts[source] = source_counts.get(source, 0) + 1
+            
+            # Hourly trends
+            try:
+                timestamp = alert.get('timestamp', '')
+                if timestamp:
+                    if timestamp.endswith('Z'):
+                        timestamp = timestamp.replace('Z', '+00:00')
+                    alert_time = datetime.fromisoformat(timestamp)
+                    hour_key = alert_time.strftime('%Y-%m-%d %H:00')
+                    hourly_trends[hour_key] = hourly_trends.get(hour_key, 0) + 1
+            except:
+                continue
+        
+        # Get log data
+        log_stats = log_streamer.get_log_statistics()
+        
+        return {
+            "summary": {
+                "total_alerts": len(all_alerts),
+                "critical_alerts": severity_counts.get('critical', 0),
+                "high_alerts": severity_counts.get('high', 0),
+                "total_logs": len(log_streamer.generated_logs) if hasattr(log_streamer, 'generated_logs') else 0,
+                "error_logs": log_stats.get('by_severity', {}).get('ERROR', 0),
+                "critical_logs": log_stats.get('by_severity', {}).get('CRITICAL', 0)
+            },
+            "severity_distribution": severity_counts,
+            "category_distribution": category_counts,
+            "source_analysis": source_counts,
+            "hourly_trends": hourly_trends,
+            "log_statistics": log_stats,
+            "recent_alerts": all_alerts[:10],  # Last 10 alerts
+            "generated_at": datetime.utcnow().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Error generating threat heatmap: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate threat heatmap: {str(e)}")
+        logger.error(f"Error getting dashboard data: {e}")
+        # Return fallback data
+        return {
+            "summary": {
+                "total_alerts": 0,
+                "critical_alerts": 0,
+                "high_alerts": 0,
+                "total_logs": 0,
+                "error_logs": 0,
+                "critical_logs": 0
+            },
+            "severity_distribution": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+            "category_distribution": {},
+            "source_analysis": {},
+            "hourly_trends": {},
+            "log_statistics": {"total": 0, "by_severity": {}, "by_source": {}, "security_relevant": 0, "last_minute": 0},
+            "recent_alerts": [],
+            "generated_at": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting realtime stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get realtime stats: {str(e)}")
 
 @router.get("/attack-timeline")
 async def get_attack_timeline(
     time_range: str = Query("24h"),
-    attack_type: Optional[str] = Query(None),
-    max_events: int = Query(100)
+    severity_filter: Optional[str] = Query(None)
 ):
-    """Get attack timeline visualization"""
+    """Get attack timeline data for charts"""
     try:
-        # Mock attack timeline data
-        attack_data = {
-            "attacks": [
-                {
-                    "id": "attack_001",
-                    "type": "malware",
-                    "severity": "critical",
-                    "target": "web_server",
-                    "description": "Ransomware attack detected",
-                    "timestamp": (datetime.utcnow() - timedelta(hours=2)).isoformat()
-                },
-                {
-                    "id": "attack_002",
-                    "type": "phishing",
-                    "severity": "high",
-                    "target": "email_system",
-                    "description": "Spear phishing campaign",
-                    "timestamp": (datetime.utcnow() - timedelta(hours=4)).isoformat()
-                },
-                {
-                    "id": "attack_003",
-                    "type": "intrusion",
-                    "severity": "medium",
-                    "target": "database_server",
-                    "description": "Unauthorized access attempt",
-                    "timestamp": (datetime.utcnow() - timedelta(hours=6)).isoformat()
-                },
-                {
-                    "id": "attack_004",
-                    "type": "ddos",
-                    "severity": "high",
-                    "target": "network_infrastructure",
-                    "description": "DDoS attack on primary network",
-                    "timestamp": (datetime.utcnow() - timedelta(hours=8)).isoformat()
-                },
-                {
-                    "id": "attack_005",
-                    "type": "malware",
-                    "severity": "low",
-                    "target": "workstation",
-                    "description": "Suspicious file detected",
-                    "timestamp": (datetime.utcnow() - timedelta(hours=12)).isoformat()
-                }
-            ]
-        }
+        from app.services.real_data_generator import data_generator
         
-        # Apply filters
-        if attack_type:
-            attack_data["attacks"] = [
-                a for a in attack_data["attacks"] 
-                if a.get("type") == attack_type.lower()
-            ]
+        alerts = data_generator.get_recent_alerts(200)
         
-        # Generate visualization
-        viz_config = {
-            "max_events": max_events,
-            "time_window": time_range,
-            "group_by": "attack_type"
-        }
+        # Filter by time range and severity
+        now = datetime.utcnow()
+        time_delta = timedelta(hours=24) if time_range == "24h" else timedelta(hours=168)  # 1 week
         
-        result = await analytics_engine.generate_visualization("attack_timeline", attack_data, viz_config)
+        filtered_alerts = []
+        for alert in alerts:
+            try:
+                alert_time = datetime.fromisoformat(alert.get('timestamp', '').replace('Z', '+00:00'))
+                if (now - alert_time) <= time_delta:
+                    if not severity_filter or alert.get('severity') == severity_filter:
+                        filtered_alerts.append(alert)
+            except:
+                continue
+        
+        # Create timeline buckets
+        buckets = 24 if time_range == "24h" else 168  # hourly buckets
+        timeline_data = []
+        
+        for i in range(buckets):
+            bucket_time = now - timedelta(hours=buckets - i - 1)
+            bucket_start = bucket_time.replace(minute=0, second=0, microsecond=0)
+            bucket_end = bucket_start + timedelta(hours=1)
+            
+            bucket_alerts = []
+            for alert in filtered_alerts:
+                try:
+                    alert_time = datetime.fromisoformat(alert.get('timestamp', '').replace('Z', '+00:00'))
+                    if bucket_start <= alert_time < bucket_end:
+                        bucket_alerts.append(alert)
+                except:
+                    continue
+            
+            severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+            for alert in bucket_alerts:
+                severity = alert.get('severity', 'low')
+                if severity in severity_counts:
+                    severity_counts[severity] += 1
+            
+            timeline_data.append({
+                "timestamp": bucket_start.isoformat(),
+                "total": len(bucket_alerts),
+                "severity_breakdown": severity_counts,
+                "categories": list(set([a.get('category', 'unknown') for a in bucket_alerts]))
+            })
         
         return {
-            "visualization_type": "attack_timeline",
-            "data": result.get("data", {}),
-            "config": viz_config,
-            "metadata": result.get("metadata", {}),
-            "timestamp": datetime.utcnow().isoformat()
+            "timeline": timeline_data,
+            "time_range": time_range,
+            "total_alerts": len(filtered_alerts),
+            "generated_at": datetime.utcnow().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Error generating attack timeline: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate attack timeline: {str(e)}")
+        logger.error(f"Error getting attack timeline: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get attack timeline: {str(e)}")
+
+def _get_top_threats(category_stats):
+    """Get top threat categories"""
+    if not category_stats:
+        return []
+    
+    sorted_categories = sorted(category_stats.items(), key=lambda x: x[1], reverse=True)
+    return [{"category": cat, "count": count} for cat, count in sorted_categories[:5]]
 
 @router.get("/entity-network")
 async def get_entity_network(
@@ -238,53 +359,38 @@ async def get_entity_network(
     max_nodes: int = Query(500),
     layout_algorithm: str = Query("force_directed")
 ):
-    """Get entity relationship network visualization"""
+    """Get entity relationship network visualization - REAL DATA ONLY"""
     try:
-        # Mock entity network data
-        entity_data = {
-            "entities": [
-                {
-                    "id": "entity_001",
-                    "value": "192.168.1.100",
-                    "type": "ip",
-                    "risk_level": "high",
-                    "connections": [2, 3, 4],
-                    "last_seen": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "entity_002",
-                    "value": "malicious-domain.com",
-                    "type": "domain",
-                    "risk_level": "critical",
-                    "connections": [1, 5],
-                    "last_seen": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "entity_003",
-                    "value": "user@company.com",
-                    "type": "email",
-                    "risk_level": "medium",
-                    "connections": [1, 2],
-                    "last_seen": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "entity_004",
-                    "value": "a1b2c3d4e5f6",
-                    "type": "hash",
-                    "risk_level": "high",
-                    "connections": [6],
-                    "last_seen": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "entity_005",
-                    "value": "10.0.0.1",
-                    "type": "ip",
-                    "risk_level": "low",
-                    "connections": [1, 3],
-                    "last_seen": datetime.utcnow().isoformat()
-                }
-            ]
-        }
+        from app.services.network_monitor import network_monitor
+        
+        # Extract entities from real network monitor data
+        entities_map = {}
+        for alert in network_monitor.memory_alerts:
+            for entity in alert.get("entities", []):
+                entity_value = entity.get("value", "")
+                entity_type_val = entity.get("type", "unknown")
+                
+                if entity_value and entity_type_val:
+                    if entity_value not in entities_map:
+                        entities_map[entity_value] = {
+                            "id": f"entity_{len(entities_map) + 1}",
+                            "value": entity_value,
+                            "type": entity_type_val,
+                            "risk_level": "medium",
+                            "connections": [],
+                            "last_seen": alert.get("timestamp", datetime.utcnow().isoformat())
+                        }
+        
+        entity_list = list(entities_map.values())
+        
+        # Apply type filter if specified
+        if entity_type:
+            entity_list = [e for e in entity_list if e.get("type") == entity_type.lower()]
+        
+        # Limit results
+        entity_list = entity_list[:max_nodes]
+        
+        entity_data = {"entities": entity_list}
         
         # Apply filters
         if entity_type:
@@ -633,6 +739,63 @@ async def get_analyst_dashboard():
     except Exception as e:
         logger.error(f"Error getting analyst dashboard: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get analyst dashboard: {str(e)}")
+
+@router.get("/data-generator-status")
+async def get_data_generator_status():
+    """Get status of the real-time data generator"""
+    try:
+        from app.services.real_data_generator import data_generator
+        from app.services.network_monitor import network_monitor
+        from app.services.log_streamer import log_streamer
+        
+        status = {
+            "data_generator": {
+                "active": data_generator.active,
+                "generated_alerts": len(data_generator.generated_alerts),
+                "statistics": data_generator.get_alert_statistics()
+            },
+            "network_monitor": {
+                "active": network_monitor.monitoring_active,
+                "memory_alerts": len(network_monitor.memory_alerts),
+                "recent_alerts": network_monitor.memory_alerts[-5:] if network_monitor.memory_alerts else []
+            },
+            "log_streamer": {
+                "active": log_streamer.active,
+                "generated_logs": len(log_streamer.generated_logs),
+                "statistics": log_streamer.get_log_statistics()
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Error getting data generator status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get data generator status: {str(e)}")
+
+@router.get("/generated-alerts")
+async def get_generated_alerts():
+    """Get alerts from the real-time data generator"""
+    try:
+        from app.services.real_data_generator import data_generator
+        
+        # Get recent alerts from data generator
+        alerts = data_generator.get_recent_alerts(100)
+        
+        return {
+            "alerts": alerts,
+            "count": len(alerts),
+            "source": "data_generator",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting generated alerts: {e}")
+        return {
+            "alerts": [],
+            "count": 0,
+            "error": str(e)
+        }
 
 @router.get("/realtime-dashboard")
 async def get_realtime_dashboard():

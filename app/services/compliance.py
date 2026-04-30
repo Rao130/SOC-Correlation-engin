@@ -6,10 +6,8 @@ import json
 from enum import Enum
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.utils.logger import setup_logging
-
-logger = setup_logging()
+from app.core.database import db_manager
+from app.core.logging import logger
 
 class ComplianceFramework(Enum):
     ISO_27001 = "ISO 27001"
@@ -28,7 +26,7 @@ class ComplianceManager:
     """Compliance management and reporting service"""
     
     def __init__(self):
-        self.db = get_db()
+        self.db = db_manager
         self.compliance_rules = {}
         self.audit_logs = []
         self._load_compliance_rules()

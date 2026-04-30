@@ -8,25 +8,35 @@ class Dashboard {
         this.alerts = [];
         this.correlations = [];
         this.reputationData = [];
+        this.activeFilters = {};
         
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.initCharts();
-        // WebSocket connection removed - no more errors
-        this.loadInitialData();
+        
+        // Delay chart initialization to ensure DOM is fully loaded
+        setTimeout(() => {
+            this.initCharts();
+            this.loadInitialData();
+            // Auto-load alerts when dashboard initializes
+            this.loadAlerts();
+        }, 100);
+        
+        this.initWebSocket(); // Add WebSocket for real-time updates
         this.startAutoRefresh();
     }
 
     setupEventListeners() {
         // Section navigation
-        document.querySelectorAll('.nav-item a').forEach(link => {
+        document.querySelectorAll('.nav-tab').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const section = link.getAttribute('href').substring(1);
-                this.showSection(section);
+                const section = link.getAttribute('onclick').match(/showSection\('([^']+)'\)/);
+                if (section && section[1]) {
+                    this.showSection(section[1]);
+                }
             });
         });
 
@@ -62,13 +72,13 @@ class Dashboard {
         }
 
         // Update navigation
-        document.querySelectorAll('.nav-item').forEach(item => {
+        document.querySelectorAll('.nav-tab').forEach(item => {
             item.classList.remove('active');
         });
         
-        const activeNavItem = document.querySelector(`[href="#${sectionName}"]`);
+        const activeNavItem = document.querySelector(`[onclick*="showSection('${sectionName}')"]`);
         if (activeNavItem) {
-            activeNavItem.parentElement.classList.add('active');
+            activeNavItem.classList.add('active');
         }
 
         this.currentSection = sectionName;
@@ -106,12 +116,33 @@ class Dashboard {
     }
 
     async loadInitialData() {
-        // Load mock data to show systems are active
-        this.updateSystemStats({
-            alerts: { new: 5, total: 42 },
-            correlations: { active: 3 },
-            threats: { level: 'medium' }
-        });
+        // Load real-time system stats
+        try {
+            const response = await fetch('/api/realtime-status');
+            if (response.ok) {
+                const stats = await response.json();
+                this.updateSystemStats({
+                    alerts: { new: stats.data_ingestion?.buffer_size || 0, total: stats.data_ingestion?.correlation_processing?.alert_buffer_size || 0 },
+                    correlations: { active: stats.data_ingestion?.correlation_processing?.active || false },
+                    threats: { level: 'medium' }
+                });
+            } else {
+                // Fallback to minimal stats
+                this.updateSystemStats({
+                    alerts: { new: 0, total: 0 },
+                    correlations: { active: false },
+                    threats: { level: 'medium' }
+                });
+            }
+        } catch (error) {
+            console.error('Error loading system stats:', error);
+            // Fallback to minimal stats
+            this.updateSystemStats({
+                alerts: { new: 0, total: 0 },
+                correlations: { active: false },
+                threats: { level: 'medium' }
+            });
+        }
     }
 
     async loadDashboardData() {
@@ -139,14 +170,24 @@ class Dashboard {
     }
 
     async loadAlerts() {
+        console.log('🔄 Starting to load alerts...');
+        
         try {
             // Load real alerts from API
+            console.log('📡 Fetching alerts from API...');
             const response = await fetch('/api/alerts/?limit=1000');
+            console.log('📡 API Response status:', response.status);
+            
             if (response.ok) {
                 const alerts = await response.json();
+                console.log('📊 Raw alerts received:', alerts.length);
+                
                 this.alerts = alerts.map(alert => ({
-                    id: alert._id,
+                    id: alert._id, // Use MongoDB _id as primary ID
+                    _id: alert._id, // Keep MongoDB _id for API calls
+                    alert_id: alert.alert_id, // Keep original alert_id for reference
                     timestamp: new Date(alert.timestamp).toLocaleString(),
+                    rawTimestamp: new Date(alert.timestamp), // Keep original timestamp for sorting
                     title: alert.title,
                     severity: alert.severity,
                     category: alert.category || 'Unknown',
@@ -154,33 +195,82 @@ class Dashboard {
                     source: alert.source_ip || alert.source || 'Unknown',
                     confidence: alert.confidence || 0,
                     description: alert.description || 'No description available'
-                }));
-                console.log('Real alerts loaded:', this.alerts.length);
+                })).sort((a, b) => b.rawTimestamp - a.rawTimestamp); // Sort by newest first
+                
+                console.log('✅ Real alerts loaded and processed:', this.alerts.length);
+                console.log('📋 Sample alert:', this.alerts[0]);
             } else {
-                // Fallback to mock data if API fails
-                console.log('API failed, using mock data');
-                this.alerts = this.getMockAlerts();
+                // API failed - show empty state
+                console.log('❌ API failed, showing empty state');
+                console.log('API Error:', response.statusText);
+                this.alerts = [];
+                console.log('📊 Empty alerts loaded');
             }
         } catch (error) {
-            console.error('Error loading alerts:', error);
-            // Fallback to mock data
-            this.alerts = this.getMockAlerts();
+            console.error('❌ Error loading alerts:', error);
+            // Show empty state on error
+            this.alerts = [];
+            console.log('📊 Empty alerts loaded due to error');
         }
         
-        this.renderAlerts();
+        console.log('🎨 Rendering alerts...');
+        // Render alerts (all alerts initially)
+        this.renderFilteredAlerts(this.alerts);
     }
 
     async loadCorrelations() {
-        // Correlation system active - using mock data
-        console.log('Correlation system active');
-        this.correlations = [];
+        try {
+            // Load real correlations from API
+            console.log('Loading real correlations...');
+            const response = await fetch('/api/correlations/?limit=100');
+            if (response.ok) {
+                const correlations = await response.json();
+                this.correlations = correlations.map(corr => ({
+                    id: corr._id,
+                    name: corr.name,
+                    type: corr.correlation_type,
+                    score: corr.correlation_score,
+                    status: corr.status,
+                    alert_count: corr.alert_count,
+                    created_at: new Date(corr.created_at).toLocaleString()
+                }));
+                console.log('✅ Real correlations loaded:', this.correlations.length);
+            } else {
+                console.log('❌ API failed, showing empty correlations');
+                this.correlations = [];
+            }
+        } catch (error) {
+            console.error('❌ Error loading correlations:', error);
+            this.correlations = [];
+        }
         this.renderCorrelations();
     }
 
     async loadReputation() {
-        // Reputation system active - using mock data
-        console.log('Reputation system active');
-        this.reputationData = [];
+        try {
+            // Load real reputation data from API
+            console.log('Loading real reputation data...');
+            const response = await fetch('/api/reputation/');
+            if (response.ok) {
+                const reputationData = await response.json();
+                this.reputationData = reputationData.map(rep => ({
+                    id: rep._id,
+                    entity: rep.entity,
+                    entity_type: rep.entity_type,
+                    reputation_score: rep.reputation_score,
+                    risk_level: rep.risk_level,
+                    sources: rep.sources || [],
+                    created_at: new Date(rep.created_at).toLocaleString()
+                }));
+                console.log('✅ Real reputation data loaded:', this.reputationData.length);
+            } else {
+                console.log('❌ API failed, showing empty reputation data');
+                this.reputationData = [];
+            }
+        } catch (error) {
+            console.error('❌ Error loading reputation data:', error);
+            this.reputationData = [];
+        }
         this.renderReputation();
     }
 
@@ -239,63 +329,8 @@ class Dashboard {
     }
 
     getMockAlerts() {
-        return [
-            {
-                id: 1,
-                timestamp: '2024-04-05 14:32:15',
-                title: 'SQL Injection Attack Detected',
-                severity: 'critical',
-                category: 'Injection',
-                status: 'new',
-                source: '192.168.1.105',
-                confidence: 95,
-                description: 'SQL injection attempt detected on login form'
-            },
-            {
-                id: 2,
-                timestamp: '2024-04-05 14:31:42',
-                title: 'Brute Force Attempt',
-                severity: 'high',
-                category: 'Authentication',
-                status: 'investigating',
-                source: '10.0.0.15',
-                confidence: 88,
-                description: 'Multiple failed login attempts detected'
-            },
-            {
-                id: 3,
-                timestamp: '2024-04-05 14:30:28',
-                title: 'Suspicious File Upload',
-                severity: 'medium',
-                category: 'File System',
-                status: 'new',
-                source: '172.16.0.45',
-                confidence: 72,
-                description: 'Suspicious file uploaded to server'
-            },
-            {
-                id: 4,
-                timestamp: '2024-04-05 14:29:10',
-                title: 'Policy Violation',
-                severity: 'low',
-                category: 'Policy',
-                status: 'resolved',
-                source: '192.168.2.30',
-                confidence: 65,
-                description: 'User violated security policy'
-            },
-            {
-                id: 5,
-                timestamp: '2024-04-05 14:28:45',
-                title: 'DDoS Attack Detected',
-                severity: 'critical',
-                category: 'Network',
-                status: 'new',
-                source: '203.0.113.5',
-                confidence: 92,
-                description: 'Distributed denial of service attack detected'
-            }
-        ];
+        // Return empty array - no mock data
+        return [];
     }
 
     animateNumber(elementId, targetValue) {
@@ -508,77 +543,442 @@ class Dashboard {
         }
     }
 
-    initCharts() {
-        // Alert Timeline Chart
-        const timelineCtx = document.getElementById('alert-timeline-chart');
-        if (timelineCtx) {
-            this.charts.timeline = new Chart(timelineCtx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Alerts',
-                        data: [],
-                        borderColor: '#00d4ff',
-                        backgroundColor: 'rgba(0, 212, 255, 0.1)',
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: { beginAtZero: true }
-                    }
+    destroyExistingCharts() {
+        console.log('🗑️ Destroying existing charts...');
+        
+        // Destroy all existing charts
+        Object.values(this.charts).forEach(chart => {
+            if (chart && typeof chart.destroy === 'function') {
+                try {
+                    chart.destroy();
+                    console.log('✅ Chart destroyed');
+                } catch (error) {
+                    console.warn('⚠️ Error destroying chart:', error);
                 }
-            });
-        }
+            }
+        });
+        
+        // Clear charts object
+        this.charts = {};
+        
+        // Clean up all canvas elements to prevent reuse error
+        const canvasElements = document.querySelectorAll('canvas');
+        canvasElements.forEach(canvas => {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            // Remove and recreate canvas to ensure clean state
+            const parent = canvas.parentNode;
+            if (parent) {
+                const newCanvas = document.createElement('canvas');
+                newCanvas.id = canvas.id;
+                newCanvas.width = canvas.width;
+                newCanvas.height = canvas.height;
+                parent.replaceChild(newCanvas, canvas);
+            }
+        });
+        
+        console.log('🗑️ All charts destroyed and canvas cleaned');
+    }
 
-        // Threat Distribution Chart
-        const distributionCtx = document.getElementById('threat-distribution-chart');
-        if (distributionCtx) {
-            this.charts.distribution = new Chart(distributionCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Critical', 'High', 'Medium', 'Low'],
-                    datasets: [{
-                        data: [0, 0, 0, 0],
-                        backgroundColor: ['#d32f2f', '#f44336', '#ff9800', '#4caf50']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'bottom' }
-                    }
+    initWebSocket() {
+        try {
+            const clientId = 'dashboard_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const wsUrl = `ws://${window.location.hostname}:8000/ws/${clientId}`;
+            
+            console.log('🔌 Connecting WebSocket for real-time updates:', wsUrl);
+            this.ws = new WebSocket(wsUrl);
+            
+            this.ws.onopen = () => {
+                console.log('✅ WebSocket connected for real-time updates');
+                
+                // Request initial data
+                this.ws.send(JSON.stringify({
+                    type: 'request_alerts',
+                    limit: 1000
+                }));
+            };
+            
+            this.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleWebSocketMessage(data);
+                } catch (error) {
+                    console.error('WebSocket message parse error:', error);
                 }
-            });
+            };
+            
+            this.ws.onclose = () => {
+                console.log('❌ WebSocket disconnected');
+                // Reconnect after 5 seconds
+                setTimeout(() => {
+                    this.initWebSocket();
+                }, 5000);
+            };
+            
+            this.ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+        } catch (error) {
+            console.error('Failed to initialize WebSocket:', error);
         }
     }
 
-    updateCharts(alerts, threats) {
-        // Update timeline chart
-        if (this.charts.timeline && alerts?.data) {
-            const timelineData = this.processTimelineData(alerts.data);
-            this.charts.timeline.data.labels = timelineData.labels;
-            this.charts.timeline.data.datasets[0].data = timelineData.data;
-            this.charts.timeline.update();
+    handleWebSocketMessage(data) {
+        console.log('📨 WebSocket message received:', data.type);
+        
+        switch(data.type) {
+            case 'initial_data':
+                console.log('📊 Received initial data via WebSocket');
+                if (data.recent_alerts && Array.isArray(data.recent_alerts)) {
+                    this.alerts = data.recent_alerts;
+                    this.updateCharts(this.alerts, {});
+                    this.updateDashboardKPIs(this.alerts);
+                    this.updateRecentAlerts(this.alerts.slice(0, 5));
+                }
+                break;
+                
+            case 'new_alert':
+                console.log('🚨 New alert received:', data.alert?.title);
+                if (data.alert) {
+                    // Add new alert to the beginning
+                    this.alerts.unshift(data.alert);
+                    
+                    // Keep only last 1000 alerts
+                    if (this.alerts.length > 1000) {
+                        this.alerts = this.alerts.slice(0, 1000);
+                    }
+                    
+                    // Update charts immediately
+                    this.updateCharts(this.alerts, {});
+                    this.updateDashboardKPIs(this.alerts);
+                    this.updateRecentAlerts(this.alerts.slice(0, 5));
+                    
+                    // Show notification
+                    this.showNotification(`New Alert: ${data.alert.title}`, 'warning');
+                }
+                break;
+                
+            case 'alerts_response':
+                console.log('📋 Alerts response received');
+                if (data.alerts && Array.isArray(data.alerts)) {
+                    this.alerts = data.alerts;
+                    this.updateCharts(this.alerts, {});
+                    this.updateDashboardKPIs(this.alerts);
+                    this.updateRecentAlerts(this.alerts.slice(0, 5));
+                }
+                break;
+                
+            case 'analytics_update':
+                console.log('📈 Analytics update received');
+                // Refresh data when analytics update comes
+                this.loadInitialData();
+                break;
+                
+            case 'metrics_update':
+                console.log('📊 Metrics update received');
+                // Refresh data when metrics update comes
+                this.loadInitialData();
+                break;
+                
+            case 'pong':
+                // Heartbeat response - do nothing
+                break;
+                
+            default:
+                console.log('🔍 Unknown WebSocket message type:', data.type, data);
+        }
+    }
+
+    initCharts() {
+        console.log('🚀 Initializing charts...');
+        console.log('Chart.js available:', typeof Chart !== 'undefined');
+        console.log('Chart object:', Chart);
+        
+        // Destroy existing charts first to prevent canvas reuse error
+        this.destroyExistingCharts();
+        
+        // Check if Chart is loaded
+        if (typeof Chart === 'undefined') {
+            console.error('❌ Chart.js is not loaded! Waiting...');
+            // Wait for Chart to load
+            setTimeout(() => this.initCharts(), 1000);
+            return;
+        }
+        
+        console.log('✅ Chart.js loaded successfully');
+        
+        // Offenses by Magnitude Chart
+        console.log('📊 Looking for magnitudeChart canvas...');
+        const magnitudeCtx = document.getElementById('magnitudeChart');
+        console.log('magnitudeChart element:', magnitudeCtx);
+        
+        if (magnitudeCtx) {
+            try {
+                console.log('🎨 Creating magnitude chart with Chart:', Chart);
+                const chartConfig = {
+                    type: 'bar',
+                    data: {
+                        labels: ['Critical', 'High', 'Medium', 'Low'],
+                        datasets: [{
+                            label: 'Alert Count',
+                            data: [0, 0, 0, 0],
+                            backgroundColor: [
+                                '#ff4444',
+                                '#ff9800',
+                                '#ffeb3b',
+                                '#4caf50'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                };
+                
+                this.charts.magnitude = new Chart(magnitudeCtx, chartConfig);
+                console.log('✅ Magnitude chart created successfully');
+            } catch (error) {
+                console.error('❌ Error creating magnitude chart:', error);
+                console.error('Error details:', error.message, error.stack);
+            }
+        } else {
+            console.warn('⚠️ magnitudeChart canvas not found');
         }
 
-        // Update distribution chart
-        if (this.charts.distribution && alerts?.data) {
-            const severityCounts = this.countBySeverity(alerts.data);
-            this.charts.distribution.data.datasets[0].data = [
+        // Offenses by Assignee Chart
+        console.log('📊 Looking for assigneeChart canvas...');
+        const assigneeCtx = document.getElementById('assigneeChart');
+        console.log('assigneeChart element:', assigneeCtx);
+        
+        if (assigneeCtx) {
+            try {
+                this.charts.assignee = new Chart(assigneeCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Analyst 1', 'Analyst 2', 'Analyst 3', 'Unassigned'],
+                        datasets: [{
+                            data: [0, 0, 0, 0],
+                            backgroundColor: [
+                                '#00d4ff',
+                                '#ff6b6b',
+                                '#4ecdc4',
+                                '#95a5a6'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+                console.log('✅ Assignee chart created successfully');
+            } catch (error) {
+                console.error('❌ Error creating assignee chart:', error);
+            }
+        } else {
+            console.warn('⚠️ assigneeChart canvas not found');
+        }
+
+        // Offenses by Type Chart
+        console.log('📊 Looking for typeChart canvas...');
+        const typeCtx = document.getElementById('typeChart');
+        console.log('typeChart element:', typeCtx);
+        
+        if (typeCtx) {
+            try {
+                this.charts.type = new Chart(typeCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: ['Malware', 'Phishing', 'Network', 'Policy', 'Other'],
+                        datasets: [{
+                            data: [0, 0, 0, 0, 0],
+                            backgroundColor: [
+                                '#e74c3c',
+                                '#f39c12',
+                                '#3498db',
+                                '#2ecc71',
+                                '#9b59b6'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+                console.log('✅ Type chart created successfully');
+            } catch (error) {
+                console.error('❌ Error creating type chart:', error);
+            }
+        } else {
+            console.warn('⚠️ typeChart canvas not found');
+        }
+
+        // Notable Events by Urgency Chart
+        console.log('📊 Looking for urgencyChart canvas...');
+        const urgencyCtx = document.getElementById('urgencyChart');
+        console.log('urgencyChart element:', urgencyCtx);
+        
+        if (urgencyCtx) {
+            try {
+                this.charts.urgency = new Chart(urgencyCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Critical',
+                            data: [],
+                            borderColor: '#ff4444',
+                            backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                            tension: 0.4
+                        }, {
+                            label: 'High',
+                            data: [],
+                            borderColor: '#ff9800',
+                            backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                            tension: 0.4
+                        }, {
+                            label: 'Medium',
+                            data: [],
+                            borderColor: '#ffeb3b',
+                            backgroundColor: 'rgba(255, 235, 59, 0.1)',
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top' }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+                console.log('✅ Urgency chart created successfully');
+            } catch (error) {
+                console.error('❌ Error creating urgency chart:', error);
+            }
+        } else {
+            console.warn('⚠️ urgencyChart canvas not found');
+        }
+
+        // Notable Events Over Time Chart
+        console.log('📊 Looking for timeChart canvas...');
+        const timeCtx = document.getElementById('timeChart');
+        console.log('timeChart element:', timeCtx);
+        
+        if (timeCtx) {
+            try {
+                this.charts.time = new Chart(timeCtx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Total Alerts',
+                            data: [],
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+                console.log('✅ Time chart created successfully');
+            } catch (error) {
+                console.error('❌ Error creating time chart:', error);
+            }
+        } else {
+            console.warn('⚠️ timeChart canvas not found');
+        }
+        
+        console.log('🎯 Chart initialization complete. Total charts:', Object.keys(this.charts).length);
+    }
+
+    updateCharts(alerts, threats) {
+        if (!alerts || !Array.isArray(alerts)) {
+            console.warn('Invalid alerts data for charts');
+            return;
+        }
+
+        console.log('Updating charts with', alerts.length, 'alerts');
+
+        // Update magnitude chart
+        if (this.charts.magnitude) {
+            const severityCounts = this.countBySeverity(alerts);
+            this.charts.magnitude.data.datasets[0].data = [
                 severityCounts.critical,
                 severityCounts.high,
                 severityCounts.medium,
                 severityCounts.low
             ];
-            this.charts.distribution.update();
+            this.charts.magnitude.update();
+        }
+
+        // Update assignee chart (mock data for now)
+        if (this.charts.assignee) {
+            this.charts.assignee.data.datasets[0].data = [
+                Math.floor(alerts.length * 0.3),
+                Math.floor(alerts.length * 0.25),
+                Math.floor(alerts.length * 0.2),
+                Math.floor(alerts.length * 0.25)
+            ];
+            this.charts.assignee.update();
+        }
+
+        // Update type chart
+        if (this.charts.type) {
+            const categoryCounts = this.countByCategory(alerts);
+            this.charts.type.data.datasets[0].data = [
+                categoryCounts.malware || 0,
+                categoryCounts.phishing || 0,
+                categoryCounts.network || 0,
+                categoryCounts.policy || 0,
+                categoryCounts.other || 0
+            ];
+            this.charts.type.update();
+        }
+
+        // Update urgency chart (timeline data)
+        if (this.charts.urgency) {
+            const timelineData = this.processTimelineData(alerts);
+            this.charts.urgency.data.labels = timelineData.labels;
+            
+            // Update each severity dataset
+            const severityTimeline = this.processSeverityTimeline(alerts);
+            this.charts.urgency.data.datasets[0].data = severityTimeline.critical;
+            this.charts.urgency.data.datasets[1].data = severityTimeline.high;
+            this.charts.urgency.data.datasets[2].data = severityTimeline.medium;
+            this.charts.urgency.update();
+        }
+
+        // Update time chart
+        if (this.charts.time) {
+            const timelineData = this.processTimelineData(alerts);
+            this.charts.time.data.labels = timelineData.labels;
+            this.charts.time.data.datasets[0].data = timelineData.data;
+            this.charts.time.update();
         }
     }
 
@@ -611,11 +1011,51 @@ class Dashboard {
     countBySeverity(alerts) {
         const counts = { critical: 0, high: 0, medium: 0, low: 0 };
         alerts.forEach(alert => {
-            if (counts.hasOwnProperty(alert.severity)) {
-                counts[alert.severity]++;
+            const severity = (alert.severity || '').toLowerCase();
+            if (counts.hasOwnProperty(severity)) {
+                counts[severity]++;
             }
         });
         return counts;
+    }
+
+    countByCategory(alerts) {
+        const counts = { malware: 0, phishing: 0, network: 0, policy: 0, other: 0 };
+        alerts.forEach(alert => {
+            const category = (alert.category || '').toLowerCase();
+            if (category.includes('malware') || category.includes('virus')) {
+                counts.malware++;
+            } else if (category.includes('phish') || category.includes('spam')) {
+                counts.phishing++;
+            } else if (category.includes('network') || category.includes('ddos') || category.includes('firewall')) {
+                counts.network++;
+            } else if (category.includes('policy') || category.includes('audit')) {
+                counts.policy++;
+            } else {
+                counts.other++;
+            }
+        });
+        return counts;
+    }
+
+    processSeverityTimeline(alerts) {
+        const hourlyData = {
+            critical: new Array(24).fill(0),
+            high: new Array(24).fill(0),
+            medium: new Array(24).fill(0)
+        };
+        
+        alerts.forEach(alert => {
+            const alertTime = new Date(alert.timestamp);
+            const hour = alertTime.getHours();
+            const severity = (alert.severity || '').toLowerCase();
+            
+            if (severity === 'critical') hourlyData.critical[hour]++;
+            else if (severity === 'high') hourlyData.high[hour]++;
+            else if (severity === 'medium') hourlyData.medium[hour]++;
+        });
+        
+        return hourlyData;
     }
 
     // WebSocket functionality removed - no more errors
@@ -643,7 +1083,7 @@ class Dashboard {
         
         // Update UI if on alerts section
         if (this.currentSection === 'alerts') {
-            this.renderAlerts();
+            this.renderFilteredAlerts(this.alerts);
         }
         
         // Update dashboard stats
@@ -717,6 +1157,175 @@ class Dashboard {
         this.renderFilteredAlerts(filtered);
     }
 
+    clearAllFilters() {
+        // Clear all active filters
+        this.activeFilters = {};
+        
+        // Clear all filter checkboxes
+        document.querySelectorAll('.filter-checkbox input').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        
+        // Clear applied filters display
+        const appliedFiltersDiv = document.getElementById('applied-filters');
+        if (appliedFiltersDiv) {
+            appliedFiltersDiv.innerHTML = '';
+        }
+        
+        // Reset dropdown filters
+        const severityFilter = document.getElementById('severity-filter');
+        const statusFilter = document.getElementById('status-filter');
+        if (severityFilter) severityFilter.value = '';
+        if (statusFilter) statusFilter.value = '';
+        
+        // Clear search
+        const searchInput = document.getElementById('alert-search');
+        if (searchInput) searchInput.value = '';
+        
+        // Render all alerts
+        this.renderFilteredAlerts(this.alerts);
+    }
+
+    applyFilter(filterType, filterValue) {
+        console.log(`🔍 Applying filter: ${filterType} = ${filterValue}`);
+        console.log(`📊 Current alerts count: ${this.alerts ? this.alerts.length : 0}`);
+        
+        // Store active filters
+        if (!this.activeFilters) {
+            this.activeFilters = {};
+        }
+        
+        // Toggle filter if already exists
+        if (this.activeFilters[filterType] === filterValue) {
+            delete this.activeFilters[filterType];
+            console.log(`❌ Removed filter: ${filterType}`);
+        } else {
+            this.activeFilters[filterType] = filterValue;
+            console.log(`✅ Added filter: ${filterType} = ${filterValue}`);
+        }
+        
+        console.log(`🎯 Active filters:`, this.activeFilters);
+        
+        // Apply all active filters
+        this.applyAllFilters();
+    }
+
+    applyAllFilters() {
+        console.log(`🔄 Applying all filters...`);
+        console.log(`📋 Total alerts before filtering: ${this.alerts ? this.alerts.length : 0}`);
+        
+        let filtered = this.alerts;
+        
+        // Apply severity filter
+        if (this.activeFilters && this.activeFilters.severity) {
+            const beforeSeverity = filtered.length;
+            filtered = filtered.filter(alert => alert.severity === this.activeFilters.severity);
+            console.log(`🎯 Severity filter (${this.activeFilters.severity}): ${beforeSeverity} → ${filtered.length}`);
+        }
+        
+        // Apply status filter
+        if (this.activeFilters && this.activeFilters.status) {
+            const beforeStatus = filtered.length;
+            filtered = filtered.filter(alert => alert.status === this.activeFilters.status);
+            console.log(`📊 Status filter (${this.activeFilters.status}): ${beforeStatus} → ${filtered.length}`);
+        }
+        
+        // Apply category filter
+        if (this.activeFilters && this.activeFilters.category) {
+            const beforeCategory = filtered.length;
+            filtered = filtered.filter(alert => alert.category === this.activeFilters.category);
+            console.log(`🏷️ Category filter (${this.activeFilters.category}): ${beforeCategory} → ${filtered.length}`);
+        }
+        
+        console.log(`✅ Final filtered alerts: ${filtered.length}`);
+        
+        // Update applied filters display
+        this.updateAppliedFiltersDisplay();
+        
+        // Render filtered alerts
+        this.renderFilteredAlerts(filtered);
+    }
+
+    updateAppliedFiltersDisplay() {
+        const appliedFiltersDiv = document.getElementById('applied-filters');
+        if (!appliedFiltersDiv) return;
+        
+        appliedFiltersDiv.innerHTML = '';
+        
+        if (this.activeFilters && Object.keys(this.activeFilters).length > 0) {
+            Object.entries(this.activeFilters).forEach(([filterType, filterValue]) => {
+                const filterTag = document.createElement('span');
+                filterTag.className = 'applied-filter-tag';
+                filterTag.innerHTML = `
+                    ${filterType}: ${filterValue}
+                    <button onclick="window.dashboard.removeFilter('${filterType}')" class="remove-filter">×</button>
+                `;
+                appliedFiltersDiv.appendChild(filterTag);
+            });
+        }
+    }
+
+    removeFilter(filterType) {
+        if (this.activeFilters && this.activeFilters[filterType]) {
+            delete this.activeFilters[filterType];
+            
+            // Uncheck the corresponding checkbox
+            const checkbox = document.querySelector(`input[onchange*="applyFilter('${filterType}'"]`);
+            if (checkbox) {
+                checkbox.checked = false;
+            }
+            
+            this.applyAllFilters();
+        }
+    }
+
+    applyFilters() {
+        const severityFilter = document.getElementById('severity-filter')?.value;
+        const statusFilter = document.getElementById('status-filter')?.value;
+        const searchTerm = document.getElementById('alert-search')?.value;
+        
+        let filtered = this.alerts;
+        
+        if (severityFilter) {
+            filtered = filtered.filter(alert => alert.severity === severityFilter);
+        }
+        
+        if (statusFilter) {
+            filtered = filtered.filter(alert => alert.status === statusFilter);
+        }
+        
+        if (searchTerm) {
+            filtered = filtered.filter(alert => 
+                alert.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                alert.description.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        }
+        
+        this.renderFilteredAlerts(filtered);
+    }
+
+    toggleAutoRefresh() {
+        const icon = document.getElementById('auto-refresh-icon');
+        if (this.refreshInterval) {
+            clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
+            icon.className = 'fas fa-play';
+        } else {
+            this.refreshInterval = setInterval(() => {
+                this.loadAlerts();
+            }, 30000); // Refresh every 30 seconds
+            icon.className = 'fas fa-pause';
+        }
+    }
+
+    previousAlertPage() {
+        console.log('Previous page functionality');
+    }
+
+    nextAlertPage() {
+        console.log('Next page functionality');
+    }
+
     filterAlertsBySeverity(severity) {
         const filtered = severity ? 
             this.alerts.filter(alert => alert.severity === severity) :
@@ -732,25 +1341,62 @@ class Dashboard {
     }
 
     renderFilteredAlerts(alerts) {
-        // Similar to renderAlerts but with filtered data
-        const grid = document.getElementById('alerts-grid');
-        if (!grid) return;
+        console.log(`🎨 Rendering filtered alerts: ${alerts ? alerts.length : 0} alerts`);
+        
+        // Render filtered alerts in table format
+        const tbody = document.getElementById('alerts-tbody');
+        if (!tbody) {
+            console.error('❌ alerts-tbody not found!');
+            return;
+        }
 
-        grid.innerHTML = alerts.map(alert => `
-            <div class="alert-card" onclick="dashboard.showAlertDetails('${alert.alert_id}')">
-                <div class="alert-card-header">
-                    <div>
-                        <div class="alert-card-title">${alert.title}</div>
-                        <div class="alert-card-description">${alert.description}</div>
-                    </div>
-                    <span class="severity-badge severity-${alert.severity}">${alert.severity}</span>
-                </div>
-                <div class="alert-card-meta">
-                    <span>${this.formatTime(alert.timestamp)}</span>
-                    <span class="status-badge status-${alert.status}">${alert.status}</span>
-                </div>
-            </div>
-        `).join('');
+        console.log('✅ alerts-tbody element found');
+
+        if (!alerts || alerts.length === 0) {
+            console.log('📭 No alerts to display, showing empty message');
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No alerts found</td></tr>';
+            return;
+        }
+
+        console.log(`📊 Building HTML for ${alerts.length} alerts...`);
+        
+        const html = alerts.map((alert, index) => {
+            // Ensure alert has a valid ID for action buttons
+            const alertId = alert._id || alert.alert_id || alert.id || `alert_${index}`;
+            
+            return `
+            <tr>
+                <td>${this.formatTime(alert.timestamp)}</td>
+                <td>${alert.title || 'N/A'}</td>
+                <td><span class="severity-badge severity-${alert.severity}">${alert.severity}</span></td>
+                <td>${alert.category || 'N/A'}</td>
+                <td><span class="status-badge status-${alert.status}">${alert.status}</span></td>
+                <td>${alert.source || 'N/A'}</td>
+                <td>${alert.confidence || 'N/A'}</td>
+                <td>
+                    <button class="action-btn" onclick="viewAlertDetails('${alertId}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="action-btn" onclick="updateAlertStatus('${alertId}', 'investigating')">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        }).join('');
+        
+        console.log('📝 Setting innerHTML...');
+        tbody.innerHTML = html;
+        console.log('✅ Alerts rendered successfully!');
+        
+        // Update alert count
+        const alertCount = document.getElementById('alert-count');
+        if (alertCount) {
+            alertCount.textContent = `${alerts.length} alerts`;
+            console.log(`📈 Updated alert count: ${alerts.length}`);
+        } else {
+            console.log('⚠️ alert-count element not found');
+        }
     }
 
     renderFilteredReputation(reputation) {
@@ -779,21 +1425,24 @@ class Dashboard {
 
     async showAlertDetails(alertId) {
         try {
-            // Use mock data instead of API call
-            const alert = {
-                id: alertId,
-                title: 'Sample Security Alert',
-                severity: 'high',
-                status: 'active',
-                timestamp: new Date().toISOString(),
-                source_ip: '192.168.1.100',
-                description: 'This is a sample alert for demonstration purposes',
-                assigned_to: 'analyst-1'
-            };
+            // Find alert from current alerts array
+            const alert = this.alerts.find(a => a._id === alertId || a.alert_id === alertId || a.id === alertId);
             
-            this.showModal('alert-modal', this.renderAlertDetails(alert));
+            if (alert) {
+                this.showModal('alert-modal', this.renderAlertDetails(alert));
+            } else {
+                // Fallback to API call if not found in current array
+                const response = await fetch(`/api/alerts/${alertId}`);
+                if (response.ok) {
+                    const alertData = await response.json();
+                    this.showModal('alert-modal', this.renderAlertDetails(alertData));
+                } else {
+                    this.showNotification('Alert not found', 'error');
+                }
+            }
         } catch (error) {
             console.error('Error loading alert details:', error);
+            this.showNotification('Error loading alert details', 'error');
         }
     }
 
@@ -839,19 +1488,58 @@ class Dashboard {
 
     async updateAlertStatus(alertId, status) {
         try {
-            const response = await fetch(`/api/alerts/${alertId}`, {
+            console.log(`🔄 Updating alert ${alertId} to status: ${status}`);
+            
+            // Find alert in local array first
+            const alertIndex = this.alerts.findIndex(a => 
+                a._id === alertId || 
+                a.alert_id === alertId || 
+                a.id === alertId ||
+                `alert_${this.alerts.indexOf(a)}` === alertId
+            );
+            
+            if (alertIndex === -1) {
+                console.error('❌ Alert not found in local array');
+                this.showNotification('Alert not found', 'error');
+                return;
+            }
+            
+            const alert = this.alerts[alertIndex];
+            // Use MongoDB _id for API calls (not alert_id)
+            const realAlertId = alert._id || alert.id;
+            
+            if (!realAlertId || realAlertId.startsWith('alert_')) {
+                // For alerts without real ID, only update local state
+                console.log('📝 Updating local alert status (no real ID)');
+                alert.status = status;
+                this.renderFilteredAlerts(this.alerts);
+                this.closeModal('alert-modal');
+                this.showNotification(`Alert marked as ${status} (local)`, 'success');
+                return;
+            }
+            
+            const response = await fetch(`/api/alerts/${realAlertId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status })
             });
             
             if (response.ok) {
+                // Update local alerts array immediately for instant feedback
+                alert.status = status;
+                this.renderFilteredAlerts(this.alerts);
+                
                 this.closeModal('alert-modal');
-                this.showNotification('Alert status updated', 'success');
-                this.loadAlerts(); // Reload alerts
+                this.showNotification(`Alert marked as ${status}`, 'success');
+                console.log(`✅ Alert status updated successfully`);
+            } else {
+                const errorText = await response.text();
+                console.error('❌ Failed to update alert status:', errorText);
+                this.showNotification('Failed to update alert status', 'error');
             }
         } catch (error) {
-            console.error('Error updating alert status:', error);
+            console.error('❌ Error updating alert status:', error);
+            this.showNotification('Error updating alert status', 'error');
         }
     }
 
@@ -980,8 +1668,9 @@ function checkReputation() {
 }
 
 // Initialize dashboard when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     window.dashboard = new Dashboard();
+    console.log('🎯 Dashboard initialized and exposed globally');
 });
 
 // Close modals when clicking outside
@@ -1072,3 +1761,111 @@ const notificationStyles = `
 const styleSheet = document.createElement('style');
 styleSheet.textContent = notificationStyles;
 document.head.appendChild(styleSheet);
+
+// Global functions for HTML onclick handlers
+function showSection(sectionName) {
+    if (window.dashboard) {
+        window.dashboard.showSection(sectionName);
+    }
+}
+
+function refreshDashboard() {
+    if (window.dashboard) {
+        window.dashboard.loadDashboardData();
+    }
+}
+
+function clearAllFilters() {
+    if (window.dashboard) {
+        window.dashboard.clearAllFilters();
+    }
+}
+
+function applyFilter(filterType, filterValue) {
+    if (window.dashboard) {
+        window.dashboard.applyFilter(filterType, filterValue);
+    }
+}
+
+function toggleAccordion(element) {
+    element.classList.toggle('active');
+    const content = element.nextElementSibling;
+    if (content.style.display === 'block') {
+        content.style.display = 'none';
+    } else {
+        content.style.display = 'block';
+    }
+}
+
+function createAlert() {
+    dashboard.createAlert();
+}
+
+function refreshRecentOffenses() {
+    if (window.dashboard) {
+        window.dashboard.loadDashboardData();
+    }
+}
+
+function toggleColumns() {
+    console.log('Toggle columns functionality');
+}
+
+function toggleDropdown() {
+    const dropdown = document.getElementById('actions-menu');
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+}
+
+function bulkAssign() {
+    console.log('Bulk assign functionality');
+}
+
+function bulkResolve() {
+    console.log('Bulk resolve functionality');
+}
+
+function bulkInvestigate() {
+    console.log('Bulk investigate functionality');
+}
+
+function exportSelected() {
+    console.log('Export selected functionality');
+}
+
+function bulkDelete() {
+    console.log('Bulk delete functionality');
+}
+
+function applyFilters() {
+    if (window.dashboard) {
+        window.dashboard.applyFilters();
+    }
+}
+
+function refreshAlerts() {
+    if (window.dashboard) {
+        window.dashboard.loadAlerts();
+    }
+}
+
+function toggleAutoRefresh() {
+    if (window.dashboard) {
+        window.dashboard.toggleAutoRefresh();
+    }
+}
+
+function exportAlerts() {
+    console.log('Export alerts functionality');
+}
+
+function previousAlertPage() {
+    if (window.dashboard) {
+        window.dashboard.previousAlertPage();
+    }
+}
+
+function nextAlertPage() {
+    if (window.dashboard) {
+        window.dashboard.nextAlertPage();
+    }
+}

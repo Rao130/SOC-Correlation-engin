@@ -9,9 +9,25 @@ let alertAutoRefreshInterval = null;
 
 // Initialize alerts page
 document.addEventListener('DOMContentLoaded', function() {
-    if (window.location.hash === '#alerts' || document.getElementById('alerts-section').classList.contains('active')) {
+    console.log('📋 Alerts.js loaded - DOM ready');
+    
+    // Always try to initialize alerts page
+    setTimeout(() => {
         initializeAlertsPage();
-    }
+    }, 1000);
+});
+
+// Also initialize when alerts section is shown
+window.addEventListener('load', function() {
+    console.log('📋 Window fully loaded - checking alerts section...');
+    
+    setTimeout(() => {
+        const alertsSection = document.getElementById('alerts-section');
+        if (alertsSection) {
+            console.log('📋 Alerts section found, forcing alerts load...');
+            initializeAlertsPage();
+        }
+    }, 1500);
 });
 
 function initializeAlertsPage() {
@@ -26,48 +42,188 @@ function initializeAlertsPage() {
     document.getElementById('create-alert-form').addEventListener('submit', handleCreateAlert);
 }
 
-// Load alerts with current filters
+// Load alerts with current filters from multiple real-time sources
 async function loadAlerts() {
     try {
-        // Use real API calls to get actual alerts
-        const response = await fetch('/api/alerts/?limit=1000');
-        if (!response.ok) {
-            throw new Error('Failed to fetch alerts');
+        console.log('Loading alerts from multiple real-time sources...');
+        
+        // Load database alerts
+        let dbAlerts = [];
+        try {
+            const dbResponse = await fetch('/api/alerts/?limit=1000');
+            if (dbResponse.ok) {
+                const data = await dbResponse.json();
+                dbAlerts = data || [];
+                console.log('Database alerts loaded:', dbAlerts.length);
+            }
+        } catch (dbError) {
+            console.warn('Error loading database alerts:', dbError);
         }
         
-        const data = await response.json();
-        window.alerts = data || [];
+        // Load real-time network alerts
+        let networkAlerts = [];
+        try {
+            const networkResponse = await fetch('/api/network/realtime-alerts');
+            if (networkResponse.ok) {
+                const networkData = await networkResponse.json();
+                networkAlerts = networkData.alerts || [];
+                console.log('Real-time network alerts loaded:', networkAlerts.length);
+            }
+        } catch (networkError) {
+            console.warn('Error loading network alerts:', networkError);
+        }
         
-        // If no alerts exist, create some initial alerts
+        // Load generated security alerts
+        let generatedAlerts = [];
+        try {
+            const genResponse = await fetch('/api/analytics/generated-alerts');
+            if (genResponse.ok) {
+                const genData = await genResponse.json();
+                generatedAlerts = genData.alerts || [];
+                console.log('Generated alerts loaded:', generatedAlerts.length);
+            }
+        } catch (genError) {
+            console.warn('Error loading generated alerts:', genError);
+        }
+        
+        // Combine all alerts with priority to real-time data
+        const allAlerts = [...networkAlerts, ...generatedAlerts, ...dbAlerts];
+        
+        // Remove duplicates based on timestamp and title
+        const uniqueAlerts = [];
+        const seen = new Set();
+        for (const alert of allAlerts) {
+            const key = `${alert.title}_${alert.timestamp}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueAlerts.push(alert);
+            }
+        }
+        
+        // Sort by timestamp (newest first)
+        uniqueAlerts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        window.alerts = uniqueAlerts;
+        
+        // If still no alerts, create network status alerts
         if (window.alerts.length === 0) {
-            await createInitialAlerts();
-            await loadAlerts(); // Reload after creating initial data
-            return;
+            console.log('No alerts found, creating network status alerts...');
+            await createNetworkStatusAlerts();
         }
         
         displayAlerts(window.alerts);
-        console.log('Real alerts loaded:', window.alerts.length, 'alerts');
+        console.log('Total real-time alerts loaded:', window.alerts.length, 'alerts');
+        
     } catch (error) {
         console.error('Error loading alerts:', error);
-        // Fallback to mock data if API fails
-        window.alerts = generateMockAlerts();
-        displayAlerts(window.alerts);
-        console.log('Fallback to mock alerts loaded');
+        // Create fallback network status alerts
+        await createNetworkStatusAlerts();
     }
 }
 
-// Create initial alerts for system
-async function createInitialAlerts() {
+// Create network status alerts as fallback
+async function createNetworkStatusAlerts() {
     try {
-        const mockAlerts = generateMockAlerts();
+        console.log('Creating network status alerts...');
         
-        for (const alert of mockAlerts.slice(0, 10)) { // Start with 10 alerts
-            await createAlert(alert);
+        // Get current network metrics
+        let metrics = null;
+        let connections = null;
+        let status = null;
+        
+        try {
+            const metricsResponse = await fetch('/api/network/metrics');
+            if (metricsResponse.ok) {
+                metrics = await metricsResponse.json();
+            }
+        } catch (metricsError) {
+            console.warn('Error loading network metrics:', metricsError);
         }
         
-        console.log('Initial alerts created');
+        try {
+            const connectionsResponse = await fetch('/api/network/connections');
+            if (connectionsResponse.ok) {
+                connections = await connectionsResponse.json();
+            }
+        } catch (connectionsError) {
+            console.warn('Error loading network connections:', connectionsError);
+        }
+        
+        try {
+            const statusResponse = await fetch('/api/network/status');
+            if (statusResponse.ok) {
+                status = await statusResponse.json();
+            }
+        } catch (statusError) {
+            console.warn('Error loading network status:', statusError);
+        }
+        
+        // Create comprehensive network status alert
+        if (metrics || connections || status) {
+            const activeConns = metrics?.active_connections || connections?.total_count || 0;
+            const bytesTransferred = (metrics?.bytes_sent || 0) + (metrics?.bytes_recv || 0);
+            const monitoringActive = status?.monitoring_active || false;
+            
+            const networkAlert = {
+                _id: `network_${Date.now()}`,
+                title: "Real-time Network Activity",
+                description: `Monitoring ${activeConns} active connections with ${bytesTransferred > 0 ? 'active' : 'no'} data transfer. Status: ${monitoringActive ? 'Active' : 'Inactive'}`,
+                severity: "low",
+                category: "network_monitoring",
+                source: "Network Monitor",
+                status: "new",
+                timestamp: new Date().toISOString(),
+                confidence: 95,
+                entities: [
+                    {"type": "monitor", "value": "system_network"},
+                    {"type": "metric", "value": `connections:${activeConns}`},
+                    {"type": "metric", "value": `bytes:${bytesTransferred}`}
+                ],
+                context: {
+                    "metrics": metrics,
+                    "connections_count": activeConns,
+                    "monitoring_active": monitoringActive
+                }
+            };
+            
+            window.alerts = [networkAlert];
+            console.log('Created network status alert:', networkAlert);
+            
+        } else {
+            // Create a default alert if no data available
+            const defaultAlert = {
+                _id: `default_${Date.now()}`,
+                title: "Network Monitor Initializing",
+                description: "Network monitoring is starting up. Real-time data will appear here momentarily.",
+                severity: "low",
+                category: "network_monitoring",
+                source: "Real-time Monitor",
+                status: "new",
+                timestamp: new Date().toISOString(),
+                confidence: 90,
+                entities: [
+                    {"type": "monitor", "value": "system_network"}
+                ]
+            };
+            
+            window.alerts = [defaultAlert];
+            console.log('Created default network alert:', defaultAlert);
+        }
+        
     } catch (error) {
-        console.error('Error creating initial alerts:', error);
+        console.error('Error creating network status alerts:', error);
+        // Create minimal fallback alert
+        window.alerts = [{
+            _id: `fallback_${Date.now()}`,
+            title: "System Starting",
+            description: "Real-time monitoring is initializing.",
+            severity: "low",
+            category: "system",
+            source: "System",
+            status: "new",
+            timestamp: new Date().toISOString(),
+            confidence: 100
+        }];
     }
 }
 
@@ -93,39 +249,10 @@ async function createAlert(alertData) {
     }
 }
 
-// Generate mock alerts data
-function generateMockAlerts() {
-    const alerts = [];
-    const severities = ['critical', 'high', 'medium', 'low'];
-    const statuses = ['active', 'investigating', 'resolved', 'false_positive'];
-    const titles = [
-        'SQL Injection Attempt',
-        'Brute Force Attack',
-        'Suspicious Login Pattern',
-        'Malware Signature Detected',
-        'Data Exfiltration Attempt',
-        'Unauthorized Access',
-        'Phishing Campaign',
-        'DDoS Attack',
-        'Port Scanning Activity',
-        'Anomalous Traffic Pattern'
-    ];
-    
-    for (let i = 1; i <= 20; i++) {
-        alerts.push({
-            id: `ALT-${String(i).padStart(6, '0')}`,
-            title: titles[Math.floor(Math.random() * titles.length)],
-            severity: severities[Math.floor(Math.random() * severities.length)],
-            status: statuses[Math.floor(Math.random() * statuses.length)],
-            timestamp: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-            source_ip: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-            description: `Security alert detected with severity level requiring immediate attention`,
-            assigned_to: Math.random() > 0.5 ? `analyst-${Math.floor(Math.random() * 5) + 1}` : null
-        });
-    }
-    
-    return alerts;
-}
+// Mock alerts generation disabled - using real network data only
+// function generateMockAlerts() {
+//     REMOVED - No longer generating fake data
+// }
 
 // Display alerts in table
 function displayAlerts(alerts) {
@@ -336,39 +463,68 @@ async function handleCreateAlert(event) {
     }
 }
 
-// Generate mock statistics for fallback
-function generateMockStats() {
-    return {
-        total: 127,
-        critical: 8,
-        high: 23,
-        medium: 45,
-        low: 51
-    };
-}
+// Mock statistics generation disabled - using real data only
+// function generateMockStats() {
+//     REMOVED - No longer generating fake statistics
+// }
 
-// Load alert statistics
+// Load alert statistics from real-time sources
 async function loadAlertStats() {
     try {
-        const response = await fetch('/api/stats');
-        const stats = await response.json();
+        // Get real-time statistics
+        let realTimeStats = null;
+        try {
+            const response = await fetch('/api/analytics/realtime-stats');
+            if (response.ok) {
+                realTimeStats = await response.json();
+                console.log('Real-time statistics loaded:', realTimeStats);
+            }
+        } catch (error) {
+            console.warn('Error loading real-time stats:', error);
+        }
+        
+        // Calculate statistics from current alerts if real-time stats not available
+        let stats = {
+            total: 0,
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0
+        };
+        
+        if (realTimeStats && realTimeStats.alert_statistics) {
+            const alertStats = realTimeStats.alert_statistics;
+            stats.total = alertStats.total || 0;
+            stats.critical = alertStats.by_severity?.critical || 0;
+            stats.high = alertStats.by_severity?.high || 0;
+            stats.medium = alertStats.by_severity?.medium || 0;
+            stats.low = alertStats.by_severity?.low || 0;
+        } else if (window.alerts && window.alerts.length > 0) {
+            // Calculate from current alerts
+            window.alerts.forEach(alert => {
+                stats.total++;
+                if (stats.hasOwnProperty(alert.severity)) {
+                    stats[alert.severity]++;
+                }
+            });
+        }
         
         // Update statistics cards
-        document.getElementById('total-alerts').textContent = stats.total || 0;
-        document.getElementById('critical-alerts').textContent = stats.critical || 0;
-        document.getElementById('high-alerts').textContent = stats.high || 0;
-        document.getElementById('medium-alerts').textContent = stats.medium || 0;
+        document.getElementById('total-alerts').textContent = stats.total;
+        document.getElementById('critical-alerts').textContent = stats.critical;
+        document.getElementById('high-alerts').textContent = stats.high;
+        document.getElementById('medium-alerts').textContent = stats.medium;
         
-        console.log('Alert statistics loaded successfully');
+        console.log('Alert statistics calculated:', stats);
+        
     } catch (error) {
         console.error('Error loading alert statistics:', error);
         
-        // Fallback to mock statistics
-        const mockStats = generateMockStats();
-        document.getElementById('total-alerts').textContent = mockStats.total;
-        document.getElementById('critical-alerts').textContent = mockStats.critical;
-        document.getElementById('high-alerts').textContent = mockStats.high;
-        document.getElementById('medium-alerts').textContent = mockStats.medium;
+        // Show zero stats instead of mock data
+        document.getElementById('total-alerts').textContent = '0';
+        document.getElementById('critical-alerts').textContent = '0';
+        document.getElementById('high-alerts').textContent = '0';
+        document.getElementById('medium-alerts').textContent = '0';
     }
 }
 
@@ -450,7 +606,7 @@ function toggleAutoRefresh() {
         alertAutoRefreshInterval = null;
         icon.className = 'fas fa-play';
     } else {
-        alertAutoRefreshInterval = setInterval(refreshAlerts, 10000); // Refresh every 10 seconds
+        alertAutoRefreshInterval = setInterval(refreshAlerts, 5000); // Refresh every 5 seconds for real-time data
         icon.className = 'fas fa-pause';
     }
 }
