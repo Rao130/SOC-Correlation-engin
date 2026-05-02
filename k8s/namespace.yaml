@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    environment: cloud
+    name: soc-correlation-engine
+  name: soc-correlation-engine

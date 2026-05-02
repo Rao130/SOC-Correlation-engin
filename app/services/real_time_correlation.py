@@ -265,9 +265,27 @@ class RealTimeCorrelationEngine:
     async def _create_temporal_correlation(self, time_key: str, alerts: List[Dict]) -> Optional[Dict]:
         """Create temporal correlation"""
         try:
-            # Parse time key to get time window
-            year, month, day, hour, minute = map(int, [time_key[:4], time_key[4:6], time_key[6:8], time_key[8:10], time_key[10:12]])
-            time_window = datetime(year, month, day, hour, minute)
+            # Parse time key to get time window with error handling
+            try:
+                # Expected format: YYYYMMDD_HHMM
+                if '_' in time_key:
+                    date_part, time_part = time_key.split('_')
+                    if len(date_part) >= 8 and len(time_part) >= 4:
+                        year = int(date_part[:4])
+                        month = int(date_part[4:6])
+                        day = int(date_part[6:8])
+                        hour = int(time_part[:2])
+                        minute = int(time_part[2:4])
+                        time_window = datetime(year, month, day, hour, minute)
+                    else:
+                        # Fallback to current time
+                        time_window = datetime.utcnow()
+                else:
+                    # Fallback to current time
+                    time_window = datetime.utcnow()
+            except (ValueError, IndexError, TypeError):
+                # Fallback to current time if parsing fails
+                time_window = datetime.utcnow()
             
             # Calculate correlation score based on temporal density
             severity_scores = [self._get_severity_score(alert.get('severity', 'medium')) for alert in alerts]

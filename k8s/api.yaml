@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soc-api
+  namespace: soc-correlation-engine
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: soc-api
+  template:
+    metadata:
+      labels:
+        app: soc-api
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: soc-config
+        - secretRef:
+            name: soc-secrets
+        image: soc-correlation-engine:latest
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        name: soc-api
+        ports:
+        - containerPort: 8000
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+          requests:
+            cpu: 250m
+            memory: 512Mi

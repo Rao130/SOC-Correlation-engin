@@ -1,0 +1,26 @@
+api-service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: api-service
+    namespace: soc-correlation-engine
+  spec:
+    ports:
+    - port: 80
+      targetPort: 8000
+    selector:
+      app: soc-api
+    type: LoadBalancer
+mongodb-service:
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: mongodb-service
+    namespace: soc-correlation-engine
+  spec:
+    ports:
+    - port: 27017
+      targetPort: 27017
+    selector:
+      app: mongodb
+    type: ClusterIP

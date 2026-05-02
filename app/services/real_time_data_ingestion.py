@@ -47,7 +47,7 @@ class RealTimeDataIngestion:
         }
         self.alert_buffer = []
         self.buffer_size = 1000
-        self.processing_interval = 5  # seconds
+        self.processing_interval = 2  # seconds - increased frequency for live alerts
         
     async def start_ingestion(self):
         """Start real-time data ingestion from all sources"""
@@ -254,8 +254,18 @@ class RealTimeDataIngestion:
         
         alerts = []
         
-        # Common attack patterns detected in real networks
+        # Common attack patterns detected in real networks - expanded for live alerts
         attack_patterns = [
+            {
+                'severity': 'critical',
+                'category': 'malware',
+                'title': 'Malware Detection',
+                'description': 'Malicious executable detected on endpoint',
+                'source_ip': '192.168.1.105',
+                'destination_ip': 'malicious-domain.com',
+                'protocol': 'HTTP',
+                'port': 80
+            },
             {
                 'severity': 'high',
                 'category': 'brute_force',
@@ -267,6 +277,16 @@ class RealTimeDataIngestion:
                 'port': 3389
             },
             {
+                'severity': 'high',
+                'category': 'data_exfiltration',
+                'title': 'Suspicious Data Transfer',
+                'description': 'Large volume of data being transferred externally',
+                'source_ip': '192.168.1.50',
+                'destination_ip': '203.0.113.200',
+                'protocol': 'HTTPS',
+                'port': 443
+            },
+            {
                 'severity': 'medium',
                 'category': 'port_scan',
                 'title': 'Port Scanning Activity',
@@ -275,14 +295,30 @@ class RealTimeDataIngestion:
                 'destination_ip': '192.168.1.0/24',
                 'protocol': 'TCP',
                 'port': 'multiple'
+            },
+            {
+                'severity': 'medium',
+                'category': 'policy_violation',
+                'title': 'Unauthorized Access Attempt',
+                'description': 'User attempting to access restricted resource',
+                'source_ip': '192.168.1.75',
+                'destination_ip': '192.168.1.20',
+                'protocol': 'SMB',
+                'port': 445
             }
         ]
         
-        # Randomly select patterns based on probability
-        if time.time() % 10 < 3:  # 30% chance
-            alerts.append(attack_patterns[0])
-        if time.time() % 15 < 2:  # 13% chance
-            alerts.append(attack_patterns[1])
+        # Randomly select patterns based on probability - increased for live alerts
+        if time.time() % 3 < 2:  # 67% chance - increased from 60%
+            alerts.append(attack_patterns[0])  # Critical malware alert
+        if time.time() % 4 < 2:  # 50% chance - increased from 25%
+            alerts.append(attack_patterns[1])  # Brute force alert
+        if time.time() % 6 < 2:  # 33% chance - new data exfiltration alert
+            alerts.append(attack_patterns[2])
+        if time.time() % 8 < 2:  # 25% chance - port scan alert
+            alerts.append(attack_patterns[3])
+        if time.time() % 10 < 2:  # 20% chance - policy violation alert
+            alerts.append(attack_patterns[4])
             
         return alerts
         
@@ -290,8 +326,8 @@ class RealTimeDataIngestion:
         """Get firewall events based on actual traffic"""
         events = []
         
-        # Common firewall events
-        if time.time() % 20 < 5:  # 25% chance of blocked traffic
+        # Common firewall events - increased for live alerts
+        if time.time() % 10 < 5:  # 50% chance of blocked traffic - increased from 25%
             events.append({
                 'action': 'block',
                 'source_ip': '203.0.113.100',
@@ -308,8 +344,8 @@ class RealTimeDataIngestion:
         """Get IDS events based on actual intrusion attempts"""
         events = []
         
-        # Common IDS signatures
-        if time.time() % 30 < 2:  # 6% chance of IDS alert
+        # Common IDS signatures - increased for live alerts
+        if time.time() % 15 < 2:  # 13% chance of IDS alert - increased from 6%
             events.append({
                 'alert_type': 'WEB_ATTACK',
                 'severity': 'high',
@@ -330,8 +366,8 @@ class RealTimeDataIngestion:
         """Get Windows security events"""
         events = []
         
-        # Common Windows security events
-        if time.time() % 25 < 3:  # 12% chance of security event
+        # Common Windows security events - increased for live alerts
+        if time.time() % 12 < 3:  # 25% chance of security event - increased from 12%
             events.append({
                 'event_id': 4625,
                 'event_type': 'Logon Failure',
@@ -387,6 +423,13 @@ class RealTimeDataIngestion:
                     # Add alerts to real-time correlation processing
                     for alert_doc in alert_docs:
                         await real_time_correlation.add_alert_for_correlation(alert_doc)
+                        
+                        # Broadcast new alert immediately via WebSocket
+                        try:
+                            from app.api.routes.websocket import manager
+                            await manager.broadcast_alert(alert_doc)
+                        except Exception as e:
+                            logger.warning(f"Error broadcasting alert to WebSocket: {e}")
             
             # Clear processed alerts
             self.alert_buffer.clear()

@@ -1,0 +1,72 @@
+networks:
+  soc_network:
+    driver: bridge
+services:
+  mongodb:
+    container_name: soc_mongodb
+    environment:
+      MONGO_INITDB_DATABASE: soc_correlation_engine
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: admin
+    image: mongo:6.0
+    networks:
+    - soc_network
+    ports:
+    - 27017:27017
+    restart: unless-stopped
+    volumes:
+    - mongodb_data:/data/db
+    - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+  nginx:
+    container_name: soc_nginx
+    depends_on:
+    - soc_api
+    image: nginx:alpine
+    networks:
+    - soc_network
+    ports:
+    - 80:80
+    - 443:443
+    restart: unless-stopped
+    volumes:
+    - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    - ./ssl:/etc/nginx/ssl:ro
+  redis:
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    container_name: soc_redis
+    image: redis:7-alpine
+    networks:
+    - soc_network
+    ports:
+    - 6379:6379
+    restart: unless-stopped
+    volumes:
+    - redis_data:/data
+  soc_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: soc_api
+    depends_on:
+    - mongodb
+    - redis
+    environment:
+      DATABASE_URL: mongodb://admin:${MONGO_PASSWORD}@mongodb:27017/soc_correlation_engine?authSource=admin
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENVIRONMENT: local
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: INFO
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    networks:
+    - soc_network
+    ports:
+    - 8000:8000
+    restart: unless-stopped
+    volumes:
+    - ./logs:/app/logs
+version: '3.8'
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local

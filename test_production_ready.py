@@ -63,6 +63,9 @@ async def test_production_readiness():
         total_correlations = await correlation_collection.count_documents({})
         print(f"🔗 Real Correlations: {total_correlations}")
         
+        # Initialize mock correlation check
+        has_mock_correlations = False
+        
         if total_correlations > 0:
             correlation_types = await correlation_collection.distinct("correlation_type")
             print(f"📊 Correlation Types: {correlation_types}")

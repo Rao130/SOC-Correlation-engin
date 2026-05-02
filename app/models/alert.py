@@ -28,6 +28,8 @@ class AlertCategory(str, Enum):
     OTHER = "other"
     NETWORK_ANOMALY = "network_anomaly"
     PORT_SCANNING = "port_scanning"
+    PORT_SCAN = "port_scan"
+    WEB_ATTACK = "web_attack"
     DATA_EXFILTRATION = "data_exfiltration"
     NETWORK_CONFIGURATION = "network_configuration"
     NETWORK_MONITORING = "network_monitoring"
