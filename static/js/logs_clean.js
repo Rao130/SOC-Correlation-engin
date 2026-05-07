@@ -64,52 +64,31 @@ async function loadLogFilters() {
     }
 }
 
-// Load logs with mock data
+// Load logs with real-time data
 async function loadLogs() {
     try {
-        const mockLogs = generateMockLogs();
-        displayLogs(mockLogs);
-        updateTimelineChart(mockLogs);
-        console.log('Logs loaded successfully');
+        console.log('Loading real-time logs...');
+        
+        const response = await fetch('/api/logs/');
+        if (response.ok) {
+            const data = await response.json();
+            const logs = data.logs || data || [];
+            displayLogs(logs);
+            updateTimelineChart(logs);
+            console.log('Real-time logs loaded:', logs.length);
+        } else {
+            console.warn('Failed to load logs from API');
+            displayLogs([]);
+        }
     } catch (error) {
-        console.error('Error loading logs:', error);
+        console.error('Error loading real-time logs:', error);
+        displayLogs([]);
     }
 }
 
-// Generate mock log data
+// No mock data generation - using real API only
 function generateMockLogs() {
-    const logs = [];
-    const currentTime = new Date();
-    
-    for (let i = 0; i < 50; i++) {
-        const timestamp = new Date(currentTime.getTime() - i * 60000); // 1 minute intervals
-        const levels = ['ERROR', 'WARNING', 'INFO', 'DEBUG'];
-        const categories = ['security', 'performance', 'system', 'application'];
-        const messages = [
-            'SQL injection attempt blocked',
-            'High CPU usage detected',
-            'User login successful',
-            'Database connection established',
-            'Firewall rule updated',
-            'Memory usage above threshold',
-            'API request processed',
-            'System backup completed',
-            'Security scan initiated',
-            'Cache cleared successfully'
-        ];
-        
-        logs.push({
-            id: `LOG-${String(i + 1).padStart(6, '0')}`,
-            timestamp: timestamp.toISOString(),
-            level: levels[Math.floor(Math.random() * levels.length)],
-            category: categories[Math.floor(Math.random() * categories.length)],
-            message: messages[Math.floor(Math.random() * messages.length)],
-            source: `server-${Math.floor(Math.random() * 5) + 1}`,
-            user_id: Math.random() > 0.5 ? `user-${Math.floor(Math.random() * 100) + 1}` : null
-        });
-    }
-    
-    return logs;
+    return [];
 }
 
 // Display logs in the table

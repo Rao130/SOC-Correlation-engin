@@ -7,16 +7,14 @@ import json
 from pathlib import Path
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.utils.logger import setup_logging
-
-logger = setup_logging()
+from app.core.database import db_manager
+from app.core.logging import logger
 
 class Forensics:
     """Digital forensics and incident investigation service"""
     
     def __init__(self):
-        self.db = get_db()
+        self.db = db_manager
         self.evidence_store = Path("data/forensics")
         self.evidence_store.mkdir(exist_ok=True)
         self.case_files = {}

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Filter Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .test-section { margin: 20px 0; padding: 15px; background: white; border-radius: 8px; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>Filter Functionality Test</h1>
+    
+    <div class="test-section">
+        <h2>Testing Filter Functions</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <script>
+        // Mock dashboard class for testing
+        class TestDashboard {
+            constructor() {
+                this.alerts = [
+                    { id: 1, title: "Critical Alert", severity: "critical", status: "new", category: "security" },
+                    { id: 2, title: "High Alert", severity: "high", status: "investigating", category: "network" },
+                    { id: 3, title: "Medium Alert", severity: "medium", status: "resolved", category: "system" },
+                    { id: 4, title: "Low Alert", severity: "low", status: "false_positive", category: "application" },
+                    { id: 5, title: "Another Critical Alert", severity: "critical", status: "investigating", category: "security" }
+                ];
+                this.activeFilters = {};
+            }
+
+            applyFilter(filterType, filterValue) {
+                console.log(`Applying filter: ${filterType} = ${filterValue}`);
+                
+                // Store active filters
+                if (!this.activeFilters) {
+                    this.activeFilters = {};
+                }
+                
+                // Toggle filter if already exists
+                if (this.activeFilters[filterType] === filterValue) {
+                    delete this.activeFilters[filterType];
+                } else {
+                    this.activeFilters[filterType] = filterValue;
+                }
+                
+                // Apply all active filters
+                return this.applyAllFilters();
+            }
+
+            applyAllFilters() {
+                let filtered = this.alerts;
+                
+                // Apply severity filter
+                if (this.activeFilters && this.activeFilters.severity) {
+                    filtered = filtered.filter(alert => alert.severity === this.activeFilters.severity);
+                }
+                
+                // Apply status filter
+                if (this.activeFilters && this.activeFilters.status) {
+                    filtered = filtered.filter(alert => alert.status === this.activeFilters.status);
+                }
+                
+                // Apply category filter
+                if (this.activeFilters && this.activeFilters.category) {
+                    filtered = filtered.filter(alert => alert.category === this.activeFilters.category);
+                }
+                
+                return filtered;
+            }
+
+            removeFilter(filterType) {
+                if (this.activeFilters && this.activeFilters[filterType]) {
+                    delete this.activeFilters[filterType];
+                    return this.applyAllFilters();
+                }
+                return this.alerts;
+            }
+        }
+
+        // Test functions
+        function runTests() {
+            const results = document.getElementById('test-results');
+            const dashboard = new TestDashboard();
+            
+            let testResults = [];
+
+            // Test 1: Initial state
+            testResults.push({
+                type: 'info',
+                message: `Initial alerts count: ${dashboard.alerts.length}`
+            });
+
+            // Test 2: Apply severity filter
+            const criticalAlerts = dashboard.applyFilter('severity', 'critical');
+            testResults.push({
+                type: criticalAlerts.length === 2 ? 'success' : 'error',
+                message: `Severity filter (critical): Found ${criticalAlerts.length} alerts, expected 2`
+            });
+
+            // Test 3: Apply status filter
+            const investigatingAlerts = dashboard.applyFilter('status', 'investigating');
+            testResults.push({
+                type: investigatingAlerts.length === 1 ? 'success' : 'error',
+                message: `Status filter (investigating): Found ${investigatingAlerts.length} alerts, expected 1`
+            });
+
+            // Test 4: Apply category filter
+            const securityAlerts = dashboard.applyFilter('category', 'security');
+            testResults.push({
+                type: securityAlerts.length === 1 ? 'success' : 'error',
+                message: `Category filter (security): Found ${securityAlerts.length} alerts, expected 1`
+            });
+
+            // Test 5: Remove filter
+            const afterRemove = dashboard.removeFilter('severity');
+            testResults.push({
+                type: afterRemove.length === 3 ? 'success' : 'error',
+                message: `After removing severity filter: Found ${afterRemove.length} alerts, expected 3`
+            });
+
+            // Test 6: Clear all filters
+            dashboard.activeFilters = {};
+            const allAlerts = dashboard.applyAllFilters();
+            testResults.push({
+                type: allAlerts.length === 5 ? 'success' : 'error',
+                message: `Clear all filters: Found ${allAlerts.length} alerts, expected 5`
+            });
+
+            // Display results
+            results.innerHTML = testResults.map(test => 
+                `<div class="test-result ${test.type}">${test.message}</div>`
+            ).join('');
+
+            const successCount = testResults.filter(t => t.type === 'success').length;
+            const totalCount = testResults.length;
+            
+            results.innerHTML += `
+                <div class="test-result info">
+                    <strong>Summary: ${successCount}/${totalCount} tests passed</strong>
+                </div>
+            `;
+        }
+
+        // Run tests when page loads
+        window.onload = runTests;
+    </script>
+</body>
+</html>

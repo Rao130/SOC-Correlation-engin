@@ -11,13 +11,43 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = False
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8001
+    
+    def __post_init__(self):
+        """Validate configuration after initialization"""
+        self._validate_config()
+    
+    def _validate_config(self):
+        """Validate critical configuration values"""
+        # Validate port range
+        if not (1 <= self.PORT <= 65535):
+            raise ValueError(f"PORT must be between 1 and 65535, got {self.PORT}")
+        
+        # Validate MongoDB URL format
+        if not self.MONGODB_URL.startswith(('mongodb://', 'mongodb+srv://')):
+            raise ValueError("MONGODB_URL must start with mongodb:// or mongodb+srv://")
+        
+        # Validate secret key length
+        if len(self.SECRET_KEY) < 32:
+            logger.warning("SECRET_KEY should be at least 32 characters for security")
+        
+        # Validate log level
+        valid_log_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        if self.LOG_LEVEL not in valid_log_levels:
+            raise ValueError(f"LOG_LEVEL must be one of {valid_log_levels}, got {self.LOG_LEVEL}")
     
     # Database
     DATABASE_TYPE: str = "mongodb"
-    MONGODB_URL: str = "mongodb://localhost:27017"
-    DATABASE_NAME: str = "soc_correlation_engine"
+    MONGODB_URL: str = "mongodb://127.0.0.1:27017"
+    DATABASE_NAME: str = "soc_correlation_engine_new"
     REDIS_URL: str = "redis://localhost:6379"
+    
+    # MongoDB Connection Options
+    MONGODB_HOST: str = "127.0.0.1"
+    MONGODB_PORT: int = 27017
+    MONGODB_USERNAME: Optional[str] = None
+    MONGODB_PASSWORD: Optional[str] = None
+    MONGODB_AUTH_SOURCE: str = "admin"
     
     # Security
     SECRET_KEY: str = "your-super-secret-key-change-in-production"
@@ -27,7 +57,7 @@ class Settings(BaseSettings):
     # CORS - Handle both string and list formats
     @property
     def ALLOWED_ORIGINS(self) -> List[str]:
-        origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000,http://127.0.0.1:59743,http://127.0.0.1:8000")
+        origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000,http://127.0.0.1:59743,http://127.0.0.1:8000,http://127.0.0.1:59071,http://127.0.0.1:55000,http://127.0.0.1:55065,http://127.0.0.1:64392,http://localhost:55000,http://localhost:55065,http://localhost:64392")
         if origins_str.startswith("["):
             try:
                 return json.loads(origins_str)
@@ -47,6 +77,9 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
+    
+# Data Generation (for testing/demo only - disable in production SIEM mode)
+    ENABLE_DATA_GENERATION: bool = False  # Set to False for production SIEM mode
     
     # Logging
     LOG_LEVEL: str = "INFO"

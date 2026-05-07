@@ -1,0 +1,87 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug SOC Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>SOC Dashboard Debug</h1>
+    
+    <div>
+        <button onclick="testAnalytics()">Test Analytics</button>
+        <button onclick="testLogs()">Test Logs</button>
+        <button onclick="checkAPIs()">Check APIs</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function testAnalytics() {
+            console.log('Testing Analytics...');
+            try {
+                const response = await fetch('/api/analytics/dashboard-data');
+                const data = await response.json();
+                console.log('Analytics data:', data);
+                document.getElementById('results').innerHTML = '<h2>Analytics Data:</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                console.error('Analytics error:', error);
+                document.getElementById('results').innerHTML = '<h2>Analytics Error:</h2><pre>' + error.message + '</pre>';
+            }
+        }
+        
+        async function testLogs() {
+            console.log('Testing Logs...');
+            try {
+                const response = await fetch('/api/logs?limit=10');
+                const data = await response.json();
+                console.log('Logs data:', data);
+                document.getElementById('results').innerHTML = '<h2>Logs Data:</h2><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                console.error('Logs error:', error);
+                document.getElementById('results').innerHTML = '<h2>Logs Error:</h2><pre>' + error.message + '</pre>';
+            }
+        }
+        
+        async function checkAPIs() {
+            console.log('Checking APIs...');
+            const results = [];
+            
+            try {
+                const alerts = await fetch('/api/alerts/?limit=5');
+                const alertsData = await alerts.json();
+                results.push(`Alerts API: ${alertsData.length} alerts`);
+            } catch (e) {
+                results.push(`Alerts API: Error - ${e.message}`);
+            }
+            
+            try {
+                const logs = await fetch('/api/logs?limit=5');
+                const logsData = await logs.json();
+                results.push(`Logs API: ${logsData.length} logs`);
+            } catch (e) {
+                results.push(`Logs API: Error - ${e.message}`);
+            }
+            
+            try {
+                const analytics = await fetch('/api/analytics/dashboard-data');
+                const analyticsData = await analytics.json();
+                results.push(`Analytics API: ${analyticsData.summary?.total_alerts || 0} total alerts`);
+            } catch (e) {
+                results.push(`Analytics API: Error - ${e.message}`);
+            }
+            
+            document.getElementById('results').innerHTML = '<h2>API Results:</h2><pre>' + results.join('\n') + '</pre>';
+        }
+        
+        // Auto-check APIs on load
+        window.addEventListener('load', function() {
+            console.log('Debug page loaded');
+            setTimeout(checkAPIs, 1000);
+        });
+    </script>
+</body>
+</html>
+    

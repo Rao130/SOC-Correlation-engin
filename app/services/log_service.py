@@ -2,11 +2,9 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from app.models.log import LogEntry, LogFilter, LogStats, LogLevel, LogCategory
-from app.core.logging import setup_logging
+from app.core.logging import logger
 import uuid
 import re
-
-logger = setup_logging()
 
 class LogService:
     def __init__(self, database_manager=None):

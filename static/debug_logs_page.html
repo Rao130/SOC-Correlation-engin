@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Logs Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-info { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        .log-table { border: 1px solid #ccc; width: 100%; }
+        .log-table th, .log-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Debug Logs Page</h1>
+    
+    <div id="debug-info" class="debug-info">
+        <h3>Debug Information:</h3>
+        <div id="debug-messages"></div>
+    </div>
+    
+    <div>
+        <button onclick="loadAndDisplayLogs()">Load Logs from API</button>
+        <button onclick="testLogsAPI()">Test Logs API</button>
+        <button onclick="clearDebugInfo()">Clear Debug Info</button>
+    </div>
+    
+    <div id="logs-container">
+        <h3>Logs Data:</h3>
+        <table id="logs-table" class="log-table">
+            <thead>
+                <tr>
+                    <th>Level</th>
+                    <th>Message</th>
+                    <th>Timestamp</th>
+                    <th>Module</th>
+                </tr>
+            </thead>
+            <tbody id="logs-tbody">
+                <tr>
+                    <td colspan="4">No logs loaded yet</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        let debugMessages = [];
+        
+        function addDebugMessage(message, type = 'info') {
+            debugMessages.push({ message, type, timestamp: new Date().toISOString() });
+            updateDebugDisplay();
+        }
+        
+        function updateDebugDisplay() {
+            const debugDiv = document.getElementById('debug-messages');
+            debugDiv.innerHTML = debugMessages.slice(-10).map(msg => 
+                `<div class="${msg.type}">[${msg.timestamp}] ${msg.message}</div>`
+            ).join('');
+        }
+        
+        async function testLogsAPI() {
+            addDebugMessage('Testing Logs API...', 'info');
+            try {
+                const response = await fetch('/api/logs?limit=5');
+                addDebugMessage(`API Response Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const logs = await response.json();
+                    addDebugMessage(`Logs returned: ${logs.length}`, 'success');
+                    if (logs.length > 0) {
+                        addDebugMessage(`Sample log: ${logs[0].level} - ${logs[0].message.substring(0, 50)}...`, 'success');
+                    }
+                } else {
+                    addDebugMessage(`API Error: ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                addDebugMessage(`API Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loadAndDisplayLogs() {
+            addDebugMessage('Loading logs from API...', 'info');
+            try {
+                const response = await fetch('/api/logs?limit=50');
+                
+                if (response.ok) {
+                    const logs = await response.json();
+                    addDebugMessage(`Successfully loaded ${logs.length} logs`, 'success');
+                    displayLogs(logs);
+                } else {
+                    addDebugMessage(`Failed to load logs: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addDebugMessage(`Error loading logs: ${error.message}`, 'error');
+            }
+        }
+        
+        function displayLogs(logs) {
+            const tbody = document.getElementById('logs-tbody');
+            tbody.innerHTML = '';
+            
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No logs available</td></tr>';
+                return;
+            }
+            
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="level-${log.level.toLowerCase()}">${log.level}</span></td>
+                    <td>${log.message}</td>
+                    <td>${new Date(log.timestamp).toLocaleString()}</td>
+                    <td>${log.module || 'N/A'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            addDebugMessage(`Displayed ${logs.length} logs in table`, 'success');
+        }
+        
+        function clearDebugInfo() {
+            debugMessages = [];
+            updateDebugDisplay();
+            document.getElementById('logs-tbody').innerHTML = '<tr><td colspan="4">No logs loaded yet</td></tr>';
+        }
+        
+        // Auto-test on page load
+        window.addEventListener('load', function() {
+            addDebugMessage('Debug page loaded', 'success');
+            setTimeout(testLogsAPI, 1000);
+        });
+    </script>
+</body>
+</html>

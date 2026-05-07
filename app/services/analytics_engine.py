@@ -7,16 +7,14 @@ import numpy as np
 from collections import defaultdict, Counter
 
 from app.core.config import settings
-from app.core.database import get_db
-from app.utils.logger import setup_logging
-
-logger = setup_logging()
+from app.core.database import db_manager
+from app.core.logging import logger
 
 class AnalyticsEngine:
     """Advanced analytics and visualization engine for SOC operations"""
     
     def __init__(self):
-        self.db = get_db()
+        self.db = db_manager
         self.visualizations = {}
         self.reports = {}
         self.dashboards = {}

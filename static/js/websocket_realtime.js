@@ -19,8 +19,9 @@ class WebSocketRealtimeIntegration {
 
     connect() {
         try {
-            // Use the current host from browser address bar
-            const wsUrl = `ws://${window.location.hostname}:8000/ws`;
+            // Use the current host from browser address bar with client ID
+            const clientId = 'dashboard_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const wsUrl = `ws://${window.location.hostname}:8000/ws/${clientId}`;
             
             console.log('Connecting to WebSocket:', wsUrl);
             this.ws = new WebSocket(wsUrl);
@@ -62,7 +63,9 @@ class WebSocketRealtimeIntegration {
 
     setupMessageHandlers() {
         // Register message handlers for different data types
-        this.messageHandlers.set('alert_update', this.handleAlertUpdate.bind(this));
+        this.messageHandlers.set('new_alert', this.handleAlertUpdate.bind(this));
+        this.messageHandlers.set('metrics_update', this.handleMetricsUpdate.bind(this));
+        this.messageHandlers.set('analytics_update', this.handleAnalyticsUpdate.bind(this));
         this.messageHandlers.set('correlation_update', this.handleCorrelationUpdate.bind(this));
         this.messageHandlers.set('reputation_update', this.handleReputationUpdate.bind(this));
         this.messageHandlers.set('system_stats', this.handleSystemStats.bind(this));
@@ -85,16 +88,58 @@ class WebSocketRealtimeIntegration {
 
     handleAlertUpdate(payload) {
         // Update alerts in real-time
-        if (window.alertManager && window.alertManager.refreshAlerts) {
-            window.alertManager.refreshAlerts();
+        console.log('Handling alert update:', payload);
+        
+        // Add new alert to the alerts list
+        if (typeof allAlerts !== 'undefined' && payload) {
+            payload.isNew = true;
+            allAlerts.unshift(payload);
+            
+            // Keep only last 100 alerts
+            if (allAlerts.length > 100) {
+                allAlerts = allAlerts.slice(0, 100);
+            }
+            
+            // Update alerts table and statistics
+            if (typeof updateAlertsTable === 'function') {
+                updateAlertsTable();
+            }
+            if (typeof updateAlertStatistics === 'function') {
+                updateAlertStatistics();
+            }
         }
         
-        // Update dashboard statistics
-        this.updateDashboardStats('alerts', payload);
+        // Refresh dashboard data
+        if (typeof loadDashboardData === 'function') {
+            loadDashboardData();
+        }
         
         // Show notification for critical alerts
         if (payload.severity === 'critical') {
             this.showNotification('Critical Alert: ' + payload.title, 'critical');
+        }
+    }
+
+    handleMetricsUpdate(payload) {
+        // Update metrics in real-time
+        console.log('Handling metrics update:', payload);
+        
+        // Update dashboard KPIs
+        if (typeof updateDashboardKPIs === 'function') {
+            // Use real-time ingestion statistics
+            const ingestionStats = payload.ingestion_statistics || {};
+            const alertCount = ingestionStats.alert_buffer_size || 0;
+            updateDashboardKPIs([{count: alertCount}]);
+        }
+    }
+
+    handleAnalyticsUpdate(payload) {
+        // Update analytics in real-time
+        console.log('Handling analytics update:', payload);
+        
+        // Update charts and stats
+        if (typeof updateCharts === 'function') {
+            updateCharts([], payload.alert_statistics || {});
         }
     }
 
@@ -141,13 +186,21 @@ class WebSocketRealtimeIntegration {
 
     handleLogUpdate(payload) {
         // Update logs in real-time
+        console.log('Handling log update:', payload);
+        
+        // Add new log to logs list
+        if (typeof addNewLogEntry === 'function' && payload) {
+            addNewLogEntry(payload);
+        }
+        
+        // Fallback to logs manager if available
         if (window.logsManager && window.logsManager.refreshLogs) {
             window.logsManager.refreshLogs();
         }
         
         // Show notification for error logs
-        if (payload.level === 'ERROR') {
-            this.showNotification('System Error: ' + payload.message, 'error');
+        if (payload.level === 'ERROR' || payload.level === 'CRITICAL') {
+            this.showNotification('System Alert: ' + payload.message, 'error');
         }
     }
 

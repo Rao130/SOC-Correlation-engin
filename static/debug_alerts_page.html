@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Alerts Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-info { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        .alert-table { border: 1px solid #ccc; width: 100%; }
+        .alert-table th, .alert-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .error { color: red; }
+        .success { color: green; }
+        .alert-severity { padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .severity-critical { background: #fee2e2; color: #dc2626; }
+        .severity-high { background: #fef3c7; color: #d97706; }
+        .severity-medium { background: #dbeafe; color: #2563eb; }
+        .severity-low { background: #d1fae5; color: #059669; }
+    </style>
+</head>
+<body>
+    <h1>Debug Alerts Page</h1>
+    
+    <div id="debug-info" class="debug-info">
+        <h3>Debug Information:</h3>
+        <div id="debug-messages"></div>
+    </div>
+    
+    <div>
+        <button onclick="loadAndDisplayAlerts()">Load Alerts from API</button>
+        <button onclick="testAlertsAPI()">Test Alerts API</button>
+        <button onclick="clearDebugInfo()">Clear Debug Info</button>
+    </div>
+    
+    <div id="alerts-container">
+        <h3>Alerts Data:</h3>
+        <table id="alerts-table" class="alert-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Title</th>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Confidence</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-tbody">
+                <tr>
+                    <td colspan="8">No alerts loaded yet</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        let debugMessages = [];
+        
+        function addDebugMessage(message, type = 'info') {
+            debugMessages.push({ message, type, timestamp: new Date().toISOString() });
+            updateDebugDisplay();
+        }
+        
+        function updateDebugDisplay() {
+            const debugDiv = document.getElementById('debug-messages');
+            debugDiv.innerHTML = debugMessages.slice(-10).map(msg => 
+                `<div class="${msg.type}">[${msg.timestamp}] ${msg.message}</div>`
+            ).join('');
+        }
+        
+        async function testAlertsAPI() {
+            addDebugMessage('Testing Alerts API...', 'info');
+            try {
+                const response = await fetch('/api/alerts/?limit=5');
+                addDebugMessage(`API Response Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const alerts = await response.json();
+                    addDebugMessage(`Alerts returned: ${alerts.length}`, 'success');
+                    if (alerts.length > 0) {
+                        addDebugMessage(`Sample alert: ${alerts[0].severity} - ${alerts[0].title.substring(0, 50)}...`, 'success');
+                    }
+                } else {
+                    addDebugMessage(`API Error: ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                addDebugMessage(`API Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loadAndDisplayAlerts() {
+            addDebugMessage('Loading alerts from API...', 'info');
+            try {
+                const response = await fetch('/api/alerts/?limit=50');
+                
+                if (response.ok) {
+                    const alerts = await response.json();
+                    addDebugMessage(`Successfully loaded ${alerts.length} alerts`, 'success');
+                    displayAlerts(alerts);
+                } else {
+                    addDebugMessage(`Failed to load alerts: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addDebugMessage(`Error loading alerts: ${error.message}`, 'error');
+            }
+        }
+        
+        function displayAlerts(alerts) {
+            const tbody = document.getElementById('alerts-tbody');
+            tbody.innerHTML = '';
+            
+            if (alerts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8">No alerts available</td></tr>';
+                return;
+            }
+            
+            alerts.forEach(alert => {
+                const row = document.createElement('tr');
+                const timestamp = alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'N/A';
+                const severityClass = `severity-${alert.severity}`;
+                
+                row.innerHTML = `
+                    <td>${timestamp}</td>
+                    <td title="${alert.description || 'No description'}">${alert.title || 'No title'}</td>
+                    <td><span class="alert-severity ${severityClass}">${alert.severity?.toUpperCase() || 'UNKNOWN'}</span></td>
+                    <td>${alert.category || 'Unknown'}</td>
+                    <td>${alert.status || 'Unknown'}</td>
+                    <td>${alert.source || 'Unknown'}</td>
+                    <td>${alert.confidence || 0}%</td>
+                    <td>
+                        <button onclick="viewAlertDetails('${alert._id}')">View</button>
+                        <button onclick="investigateAlert('${alert._id}')">Investigate</button>
+                        <button onclick="resolveAlert('${alert._id}')">Resolve</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            addDebugMessage(`Displayed ${alerts.length} alerts in table`, 'success');
+        }
+        
+        function viewAlertDetails(alertId) {
+            addDebugMessage(`Viewing alert details: ${alertId}`, 'info');
+        }
+        
+        function investigateAlert(alertId) {
+            addDebugMessage(`Investigating alert: ${alertId}`, 'info');
+        }
+        
+        function resolveAlert(alertId) {
+            addDebugMessage(`Resolving alert: ${alertId}`, 'info');
+        }
+        
+        function clearDebugInfo() {
+            debugMessages = [];
+            updateDebugDisplay();
+            document.getElementById('alerts-tbody').innerHTML = '<tr><td colspan="8">No alerts loaded yet</td></tr>';
+        }
+        
+        // Auto-test on page load
+        window.addEventListener('load', function() {
+            addDebugMessage('Debug alerts page loaded', 'success');
+            setTimeout(testAlertsAPI, 1000);
+        });
+    </script>
+</body>
+</html>

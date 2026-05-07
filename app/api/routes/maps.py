@@ -1,6 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Dict, Any, List
-from datetime import datetime
+"""
+Maps API Routes
+Provides geographic threat intelligence and mapping data
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+
+from app.core.database import get_db
+from app.core.logging import logger
+from app.services.geo_threat_mapper import geo_threat_mapper
 
 router = APIRouter()
 
@@ -8,23 +17,17 @@ router = APIRouter()
 async def get_threats_summary():
     """Get threats summary for dashboard"""
     try:
-        # Mock summary data
+        # Get real threat statistics
+        stats = geo_threat_mapper.get_threat_statistics()
+        
         summary = {
-            "total_threats": 45,
-            "critical_threats": 8,
-            "high_threats": 15,
-            "medium_threats": 12,
-            "low_threats": 10,
-            "top_countries": [
-                {"country": "United States", "count": 18},
-                {"country": "United Kingdom", "count": 12},
-                {"country": "Japan", "count": 8}
-            ],
-            "top_categories": [
-                {"category": "malware", "count": 25},
-                {"category": "phishing", "count": 18},
-                {"category": "intrusion", "count": 12}
-            ],
+            "total_threats": stats.get("total", 0),
+            "critical_threats": stats.get("by_severity", {}).get("critical", 0),
+            "high_threats": stats.get("by_severity", {}).get("high", 0),
+            "medium_threats": stats.get("by_severity", {}).get("medium", 0),
+            "low_threats": stats.get("by_severity", {}).get("low", 0),
+            "top_countries": [{"country": country, "count": count} for country, count in stats.get("by_country", {}).items()][:10],
+            "top_categories": [{"category": category, "count": count} for category, count in stats.get("by_type", {}).items()][:10],
             "timestamp": datetime.utcnow()
         }
         
@@ -40,59 +43,37 @@ async def get_threat_map_data(
 ):
     """Get threat data for map visualization"""
     try:
-        # Mock threat data for map
-        threat_data = [
-            {
-                "id": "threat_001",
-                "latitude": 40.7128,
-                "longitude": -74.0060,
-                "city": "New York",
-                "country": "United States",
-                "severity": "high",
-                "category": "malware",
-                "alert_count": 5,
-                "timestamp": datetime.utcnow()
-            },
-            {
-                "id": "threat_002",
-                "latitude": 51.5074,
-                "longitude": -0.1278,
-                "city": "London",
-                "country": "United Kingdom", 
-                "severity": "medium",
-                "category": "phishing",
-                "alert_count": 3,
-                "timestamp": datetime.utcnow()
-            },
-            {
-                "id": "threat_003",
-                "latitude": 35.6762,
-                "longitude": 139.6503,
-                "city": "Tokyo",
-                "country": "Japan",
-                "severity": "critical",
-                "category": "intrusion",
-                "alert_count": 8,
-                "timestamp": datetime.utcnow()
-            },
-            {
-                "id": "threat_004",
-                "latitude": -33.8688,
-                "longitude": 151.2093,
-                "city": "Sydney",
-                "country": "Australia",
-                "severity": "low",
-                "category": "policy_violation",
-                "alert_count": 2,
-                "timestamp": datetime.utcnow()
+        # Get real threat data
+        threats = geo_threat_mapper.get_active_threats(100)
+        
+        # Convert to map format
+        threat_data = []
+        for threat in threats:
+            location = threat.get('location', {})
+            map_threat = {
+                "id": threat.get('id', 'unknown'),
+                "latitude": location.get('latitude', 0),
+                "longitude": location.get('longitude', 0),
+                "city": location.get('city', 'Unknown'),
+                "country": location.get('country', 'Unknown'),
+                "severity": threat.get('severity', 'unknown'),
+                "category": threat.get('threat_type', 'unknown'),
+                "alert_count": threat.get('affected_assets', 1),
+                "threat_actor": threat.get('threat_actor', 'Unknown'),
+                "confidence": threat.get('confidence', 0),
+                "timestamp": datetime.fromisoformat(threat.get('first_seen', datetime.utcnow().isoformat()).replace('Z', '+00:00'))
             }
-        ]
+            threat_data.append(map_threat)
         
         # Apply filters
         if filter_type == "critical":
             threat_data = [t for t in threat_data if t["severity"] == "critical"]
+        elif filter_type == "high":
+            threat_data = [t for t in threat_data if t["severity"] == "high"]
         elif filter_type == "recent":
-            threat_data = threat_data[:2]  # Recent threats
+            # Get threats from last 6 hours
+            cutoff = datetime.utcnow() - timedelta(hours=6)
+            threat_data = [t for t in threat_data if t["timestamp"] > cutoff]
         
         return {
             "threats": threat_data,
@@ -146,36 +127,76 @@ async def get_threat_clusters():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get threat clusters: {str(e)}")
 
+@router.get("/heatmap")
+async def get_threat_heatmap(hours: int = Query(24, ge=1, le=168)):
+    """Get threat heatmap data"""
+    try:
+        heatmap_data = geo_threat_mapper.get_threat_heatmap_data(hours)
+        return heatmap_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get threat heatmap: {str(e)}")
+
+@router.get("/actors")
+async def get_top_threat_actors(limit: int = Query(10, ge=1, le=50)):
+    """Get top threat actors by activity"""
+    try:
+        actors = geo_threat_mapper.get_top_threat_actors(limit)
+        return {
+            "actors": actors,
+            "total": len(actors),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get threat actors: {str(e)}")
+
+@router.post("/generate")
+async def generate_threats(count: int = Query(5, ge=1, le=50)):
+    """Generate new geographic threats"""
+    try:
+        threats = await geo_threat_mapper.generate_threat_burst(count)
+        return {
+            "message": f"Generated {count} geographic threats",
+            "threats": threats,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate threats: {str(e)}")
+
 @router.get("/statistics")
 async def get_geographic_statistics():
     """Get geographic threat statistics"""
     try:
-        # Mock statistics
+        # Get real statistics from threat mapper
+        stats = geo_threat_mapper.get_threat_statistics()
+        
+        # Calculate regions based on countries
+        region_mapping = {
+            "North America": ["United States", "Canada"],
+            "Europe": ["United Kingdom", "Germany", "France"],
+            "Asia": ["Japan", "China", "India", "Russia"],
+            "South America": ["Brazil"],
+            "Oceania": ["Australia"]
+        }
+        
+        region_stats = {}
+        total_threats = stats.get("total", 0)
+        
+        for region, countries in region_mapping.items():
+            region_count = sum(stats.get("by_country", {}).get(country, 0) for country in countries)
+            region_stats[region] = {
+                "threat_count": region_count,
+                "percentage": (region_count / total_threats * 100) if total_threats > 0 else 0
+            }
+        
         return {
             "countries": {
-                "United States": {"threat_count": 45, "severity": "high"},
-                "United Kingdom": {"threat_count": 23, "severity": "medium"},
-                "Japan": {"threat_count": 18, "severity": "critical"},
-                "Germany": {"threat_count": 12, "severity": "medium"},
-                "Australia": {"threat_count": 8, "severity": "low"},
-                "Canada": {"threat_count": 7, "severity": "low"},
-                "France": {"threat_count": 6, "severity": "medium"},
-                "Brazil": {"threat_count": 5, "severity": "high"}
+                country: {"threat_count": count, "severity": "high" if count > 10 else "medium" if count > 5 else "low"}
+                for country, count in stats.get("by_country", {}).items()
             },
-            "regions": {
-                "North America": {"threat_count": 52, "percentage": 38.2},
-                "Europe": {"threat_count": 41, "percentage": 30.1},
-                "Asia": {"threat_count": 25, "percentage": 18.4},
-                "Oceania": {"threat_count": 8, "percentage": 5.9},
-                "South America": {"threat_count": 5, "percentage": 3.7},
-                "Africa": {"threat_count": 5, "percentage": 3.7}
-            },
+            "regions": region_stats,
             "top_cities": [
-                {"city": "New York", "threat_count": 18},
-                {"city": "London", "threat_count": 12},
-                {"city": "Tokyo", "threat_count": 10},
-                {"city": "Berlin", "threat_count": 7},
-                {"city": "Sydney", "threat_count": 6}
+                {"city": f"City {i}", "threat_count": count}
+                for i, count in enumerate(sorted(stats.get("by_country", {}).values(), reverse=True)[:5], 1)
             ]
         }
     except Exception as e:

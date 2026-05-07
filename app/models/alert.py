@@ -26,6 +26,18 @@ class AlertCategory(str, Enum):
     POLICY_VIOLATION = "policy_violation"
     ANOMALY = "anomaly"
     OTHER = "other"
+    NETWORK_ANOMALY = "network_anomaly"
+    PORT_SCANNING = "port_scanning"
+    PORT_SCAN = "port_scan"
+    WEB_ATTACK = "web_attack"
+    DATA_EXFILTRATION = "data_exfiltration"
+    NETWORK_CONFIGURATION = "network_configuration"
+    NETWORK_MONITORING = "network_monitoring"
+    BRUTE_FORCE = "brute_force"
+    PRIVILEGE_ESCALATION = "privilege_escalation"
+    LATERAL_MOVEMENT = "lateral_movement"
+    C2_COMMUNICATION = "c2_communication"
+    RECONNAISSANCE = "reconnaissance"
 
 class EntityType(str, Enum):
     IP = "ip"
@@ -35,6 +47,10 @@ class EntityType(str, Enum):
     EMAIL = "email"
     USER = "user"
     FILE = "file"
+    IP_ADDRESS = "ip_address"
+    PORT = "port"
+    ANOMALY = "anomaly"
+    MONITOR = "monitor"
 
 class Entity(BaseModel):
     type: EntityType

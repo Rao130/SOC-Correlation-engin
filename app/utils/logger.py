@@ -1,22 +1,8 @@
-import logging
-import sys
-from pathlib import Path
+"""
+Backward compatibility module for logging.
+All logging functionality has been consolidated to app.core.logging using loguru.
+"""
 
-def setup_logging():
-    """Setup logging configuration"""
-    
-    # Create logs directory if it doesn't exist
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / "soc_engine.log"),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    
-    return logging.getLogger(__name__)
+from app.core.logging import logger, setup_logging
+
+__all__ = ['logger', 'setup_logging']
